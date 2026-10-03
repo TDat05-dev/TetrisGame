@@ -9,6 +9,7 @@
     --rows: 20;
     --cell-size: 30px;
 
+    /* Màu theo id khối, khớp với giá trị trong PIECES ở gamemode.js */
     --c1: #FF8E0D; /* I */
     --c2: #0DFF72; /* L */
     --c3: #F538FF; /* J */
@@ -16,6 +17,10 @@
     --c5: #3877FF; /* Z */
     --c6: #FFE138; /* S */
     --c7: #FF0D72; /* T */
+
+    --panel-bg: #1a1a24;
+    --panel-border: #33334d;
+    --text-muted: #8888a0;
 }
 
 body {
@@ -42,25 +47,7 @@ h1 {
     text-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
 }
 
-.score-board {
-    display: flex;
-    gap: 100px;
-    font-size: 20px;
-    font-weight: bold;
-    background: #1a1a24;
-    padding: 8px 20px;
-    border-radius: 8px;
-    border: 1px solid #33334d;
-}
-
-#score {
-    color: #ff007f;
-}
-
-#level {
-    color: #00f0ff;
-}
-
+/* ===== Bố cục: bàn chơi bên trái, bảng thông tin bên phải ===== */
 .play-area {
     display: flex;
     align-items: flex-start;
@@ -71,63 +58,56 @@ h1 {
     position: relative;
 }
 
-.next-box {
+.side-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 140px;
+}
+
+.stat {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
-    padding: 10px;
-    background: #1a1a24;
-    border: 1px solid #33334d;
+    gap: 4px;
+    padding: 10px 16px;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
     border-radius: 8px;
 }
 
-.next-title {
+.stat-label {
     font-size: 0.8rem;
     font-weight: bold;
     letter-spacing: 2px;
-    color: #8888a0;
+    color: var(--text-muted);
 }
 
-.next-grid {
-    --preview-size: 4;
-    display: grid;
-    grid-template-columns: repeat(var(--preview-size), 50px);
-    grid-template-rows: repeat(var(--preview-size), 50px);
-    background-color: #000000;
+.stat-value {
+    font-size: 1.5rem;
+    font-weight: bold;
 }
 
+.stat-value--score {
+    color: #ff007f;
+}
+
+.stat-value--level {
+    color: #00f0ff;
+}
+
+/* ===== Bàn chơi ===== */
 .board {
     display: grid;
     grid-template-columns: repeat(var(--cols), var(--cell-size));
     grid-template-rows: repeat(var(--rows), var(--cell-size));
     background-color: #000000;
-    border: 3px solid #33334d;
+    border: 3px solid var(--panel-border);
     border-radius: 6px;
     box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
     cursor: pointer;
     user-select: none;
     transition: transform 0.5s ease;
-}
-
-
-.level-banner {
-    position: absolute;
-    left: 50%;
-    top: 40%;
-    transform: translate(-50%, -50%);
-    width: max-content;
-    max-width: 90%;
-    padding: 10px 18px;
-    border-radius: 8px;
-    background: rgba(18, 18, 20, 0.92);
-    border: 1px solid #00f0ff;
-    color: #00f0ff;
-    font-weight: bold;
-    text-align: center;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.3s ease;
 }
 
 .level-banner.is-visible {
@@ -154,6 +134,6 @@ h1 {
 .controls-hint {
     text-align: center;
     font-size: 0.85rem;
-    color: #8888a0;
+    color: var(--text-muted);
     line-height: 1.5;
 }
