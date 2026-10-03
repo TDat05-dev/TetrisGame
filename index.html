@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Tetris</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="game-container">
+    <h1>TETRIS</h1>
+
+
+    <div class="play-area">
+        <div class="board-wrapper">
+            <div id="board" class="board" aria-label="Bàn chơi Tetris"></div>
+            <div id="level-banner" class="level-banner" role="status" aria-live="polite"></div>
+        </div>
+
+        <aside class="next-box">
+            <span class="next-title">TIẾP THEO</span>
+            <div id="next" class="next-grid" aria-label="Khối tiếp theo"></div>
+            <div class="score-board">
+                <span>SỐ ĐIỂM: <span id="score">0</span></span>
+            </div>
+            <div>
+                <span>LEVEL: <span id="level">1</span></span>
+            </div>
+        </aside>
+    </div>
+
+    <div class="controls-hint">
+        <p>A D : Di chuyển sang trái/phải</p>
+        <p>W / Click : Xoay khối hình</p>
+        <p>S : Thả rơi nhanh</p>
+    </div>
+</div>
+
+<script src="gamemode.js"></script>
+</body>
+</html>
