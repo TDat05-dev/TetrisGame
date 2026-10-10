@@ -5,6 +5,8 @@ const COLS = 10;
 const ROWS = 20;
 const DROP_INTERVAL_MS = 1000;   // Tốc độ rơi: 1 giây / ô
 
+//thêm điểm nếu như phá được nhiều khối cùng lúc
+const LINE_CLEAR_SCORES = [0, 10, 30, 50, 100];
 
 // Hình dạng các khối. Giá trị số = id màu (ánh xạ sang --c1..--c7 trong style.css)
 const PIECES = Object.freeze({
@@ -171,7 +173,7 @@ function renderBoard() {
         });
     }
 
-    // 3. Diff: chỉ cập nhật DOM ở những ô khác với lần vẽ trước
+    // 3hỉ cập nhật DOM ở những ô khác với lần vẽ trước
     for (let i = 0; i < frame.length; i++) {
         if (frame[i] !== prevFrame[i]) {
             boardCells[i].dataset.v = frame[i];
@@ -245,12 +247,42 @@ function startGame() {
     spawnPiece();
 }
 
-// Hạ khối xuống 1 ô. Nếu không hạ được: thêm khối vào arena rồi sinh khối mới.
+// Kiểm tra một hàng đã được lấp đầy chưa (không còn ô nào bằng 0)
+function isRowFull(row) {
+    for (let x = 0; x < row.length; x++) {
+        if (row[x] === 0) {
+            return false;
+        }
+    }
+    return true;
+}
+// Xóa tất cả các hàng đầy, các hàng phía trên dồn xuống. Trả về số hàng đã xóa.
+function clearFullRows() {
+    let clearedCount = 0;
+    let y = ROWS - 1;
+
+    while (y >= 0) {
+        if (isRowFull(arena[y])) {
+            const removedRow = arena.splice(y, 1)[0];// căt hàng đã full ra khỏi arena
+            removedRow.fill(0); //fill hàm vừa cắt bằng số 0
+            arena.unshift(removedRow);//đưa hàn vừa fill lên đầu
+            clearedCount++;
+        } else {
+            y--;
+        }
+    }
+    return clearedCount;
+}
+
+// Hạ khối xuống 1 ô. Nếu không hạ được: thêm khối vào arena, xóa hàng đầy rồi sinh khối mới.
 function playerDrop() {
     player.pos.y++;
     if (collide(arena, player)) {
         player.pos.y--;
         merge(arena, player);
+        const clearedCount = clearFullRows();
+        game.score += LINE_CLEAR_SCORES[clearedCount];
+
         if (!spawnPiece()) {
             startGame();
         }
