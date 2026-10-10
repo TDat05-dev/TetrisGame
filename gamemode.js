@@ -257,17 +257,21 @@ function playerDrop() {
     }
     dropCounter = 0;
 }
-window.addEventListener('keydown', (e) => {
-    const key = e.key.toLowerCase();
-
-    if (key === 'a') {
+//Xử lý sự kiện bàn phím
+window.addEventListener('keydown', function (event) {
+    if (event.code === 'KeyA') {
         playerMove(-1);
-    } else if (key === 'd') {
+    } else if (event.code === 'KeyD') {
         playerMove(1);
-    } else if(key === 's'){
-        player.pos.y++;
+    } else if (event.code === 'KeyS') {
+        playerDrop(); // Có kiểm tra va chạm, chạm đáy thì chốt khối
+    } else if (event.code === 'Space') {
+        playerRotate();
+    } else {
+        return;
     }
 
+    event.preventDefault();
 });
 
 // Di chuyển khối sang trái phải
@@ -276,6 +280,37 @@ function playerMove(dir) {
     if (collide(arena, player)) {
         player.pos.x -= dir;
     }
+}
+
+//xoay khối bằng cách xoay ma trận
+function rotateBlock(matrix) {
+    const size = matrix.length;
+    const res = createMatrix(size,size);
+    for(let y =0 ; y< size;y++){
+        for(let x =0; x <size;x++){
+            res[y][x]=matrix[size-1-x][y];
+        }
+    }
+    return res;
+}
+const WALL_KICK_OFFSETS = [0, 1, -1, 2, -2];
+
+function playerRotate(){
+    if(player.matrix=== null){
+        return;
+    }
+    const originalMatrix = player.matrix;
+        const originalX = player.pos.x;
+        player.matrix = rotateBlock(originalMatrix);
+
+        for (let i = 0; i < WALL_KICK_OFFSETS.length; i++) {
+            player.pos.x = originalX + WALL_KICK_OFFSETS[i];
+            if (!collide(arena, player)) {
+                return;
+            }
+        }
+        player.matrix = originalMatrix;
+        player.pos.x = originalX;
 }
 
 //GAME LOOP
