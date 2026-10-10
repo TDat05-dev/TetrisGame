@@ -245,17 +245,37 @@ function startGame() {
     spawnPiece();
 }
 
-// Hạ khối xuống 1 ô. Nếu không hạ được: chốt khối vào arena rồi sinh khối mới.
+// Hạ khối xuống 1 ô. Nếu không hạ được: thêm khối vào arena rồi sinh khối mới.
 function playerDrop() {
     player.pos.y++;
     if (collide(arena, player)) {
         player.pos.y--;
         merge(arena, player);
         if (!spawnPiece()) {
-            startGame(); // Khối mới không còn chỗ xuất hiện -> thua, chơi lại từ đầu
+            startGame();
         }
     }
     dropCounter = 0;
+}
+window.addEventListener('keydown', (e) => {
+    const key = e.key.toLowerCase();
+
+    if (key === 'a') {
+        playerMove(-1);
+    } else if (key === 'd') {
+        playerMove(1);
+    } else if(key === 's'){
+        player.pos.y++;
+    }
+
+});
+
+// Di chuyển khối sang trái phải
+function playerMove(dir) {
+    player.pos.x += dir;
+    if (collide(arena, player)) {
+        player.pos.x -= dir;
+    }
 }
 
 //GAME LOOP
