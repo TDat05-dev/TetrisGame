@@ -47,6 +47,7 @@ const PIECES = Object.freeze({
     ],
 });
 const PIECE_TYPES = Object.keys(PIECES);
+const PREVIEW_SIZE = 4;
 
 //UTILITY
 
@@ -63,7 +64,7 @@ function createMatrix(width, height) {
     return Array.from({ length: height }, () => new Array(width).fill(0));
 }
 
-// Trả về BẢN SAO của khối mẫu trong PIECES (hàm xoay sau này sẽ sửa ma trận tại chỗ)
+// Trả về BẢN SAO của khối mẫu trong PIECES để không ai sửa nhầm vào khối mẫu
 function createPiece(type) {
     const template = PIECES[type];
     if (!template) {
@@ -86,10 +87,13 @@ const player = {
     matrix: null,
 };
 
+let nextPieceType = null;
+
 // Trạng thái chung của ván chơi
 const game = {
     score: 0,
     level: 1,
+    isOver: false,
 };
 
 // reset trạng thái
@@ -98,13 +102,13 @@ function resetState() {
     player.pos.x = 0;
     player.pos.y = 0;
     player.matrix = null;
+    nextPieceType = null;
     game.score = 0;
     game.level = 1;
-    game.flipped = false;
+    game.isOver = false;
 }
 
 //RENDERER
-// Renderer
 
 function getRequiredElement(id) {
     const element = document.getElementById(id);
@@ -118,10 +122,14 @@ const dom = {
     board: getRequiredElement('board'),
     score: getRequiredElement('score'),
     level: getRequiredElement('level'),
-    banner: getRequiredElement('level-banner'),
+    next: getRequiredElement('next'),
+    gameOver: getRequiredElement('game-over'),
+    finalScore: getRequiredElement('final-score'),
+    restartButton: getRequiredElement('restart-button'),
 };
 
 const boardCells = [];
+const previewCells = [];
 
 const frame = new Array(COLS * ROWS).fill(0);
 const prevFrame = new Array(COLS * ROWS).fill(0);
@@ -129,10 +137,9 @@ const prevFrame = new Array(COLS * ROWS).fill(0);
 const rendered = {
     score: null,
     level: null,
-    flipped: null,
+    nextType: null,
+    isOver: null,
 };
-
-let bannerTimer = null;
 
 function initRenderer() {
     const fragment = document.createDocumentFragment();
@@ -146,10 +153,23 @@ function initRenderer() {
     }
     dom.board.replaceChildren(fragment);
 
+    // Tạo 16 ô cho lưới xem trước khối kế tiếp
+    const previewFragment = document.createDocumentFragment();
+    previewCells.length = 0;
+    for (let i = 0; i < PREVIEW_SIZE * PREVIEW_SIZE; i++) {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.dataset.v = 0;
+        previewFragment.appendChild(cell);
+        previewCells.push(cell);
+    }
+    dom.next.replaceChildren(previewFragment);
+
     prevFrame.fill(0);
     rendered.score = null;
     rendered.level = null;
-    rendered.flipped = null;
+    rendered.nextType = null;
+    rendered.isOver = null;
 }
 
 function renderBoard() {
@@ -173,7 +193,7 @@ function renderBoard() {
         });
     }
 
-    // 3hỉ cập nhật DOM ở những ô khác với lần vẽ trước
+    // 3. Chỉ cập nhật DOM ở những ô khác với lần vẽ trước
     for (let i = 0; i < frame.length; i++) {
         if (frame[i] !== prevFrame[i]) {
             boardCells[i].dataset.v = frame[i];
@@ -182,7 +202,54 @@ function renderBoard() {
     }
 }
 
-// Cập nhật điểm, level và trạng thái lật màn hình
+// Vẽ khối kế tiếp vào lưới xem trước, căn giữa theo phần có màu của khối
+function renderNextPreview() {
+    if (nextPieceType === rendered.nextType) {
+        return; // Khối kế tiếp chưa đổi -> không cần vẽ lại
+    }
+    rendered.nextType = nextPieceType;
+
+    // Xóa trắng lưới
+    for (let i = 0; i < previewCells.length; i++) {
+        previewCells[i].dataset.v = 0;
+    }
+    if (nextPieceType === null) {
+        return;
+    }
+
+    const matrix = PIECES[nextPieceType];
+
+    let minX = matrix.length;
+    let maxX = -1;
+    let minY = matrix.length;
+    let maxY = -1;
+    for (let y = 0; y < matrix.length; y++) {
+        for (let x = 0; x < matrix[y].length; x++) {
+            if (matrix[y][x] !== 0) {
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+    }
+
+    const pieceWidth = maxX - minX + 1;
+    const pieceHeight = maxY - minY + 1;
+    const offsetX = Math.floor((PREVIEW_SIZE - pieceWidth) / 2) - minX;
+    const offsetY = Math.floor((PREVIEW_SIZE - pieceHeight) / 2) - minY;
+
+    for (let y = 0; y < matrix.length; y++) {
+        for (let x = 0; x < matrix[y].length; x++) {
+            if (matrix[y][x] !== 0) {
+                const index = (y + offsetY) * PREVIEW_SIZE + (x + offsetX);
+                previewCells[index].dataset.v = matrix[y][x];
+            }
+        }
+    }
+}
+
+// Cập nhật điểm và level
 function renderHud() {
     if (game.score !== rendered.score) {
         dom.score.textContent = game.score;
@@ -192,15 +259,27 @@ function renderHud() {
         dom.level.textContent = game.level;
         rendered.level = game.level;
     }
-    if (game.flipped !== rendered.flipped) {
-        dom.board.classList.toggle('is-flipped', game.flipped);
-        rendered.flipped = game.flipped;
+}
+
+// Ẩn/hiện popup Game Over theo game.isOver
+function renderGameOver() {
+    if (game.isOver === rendered.isOver) {
+        return;
+    }
+    rendered.isOver = game.isOver;
+
+    dom.gameOver.hidden = !game.isOver;
+    if (game.isOver) {
+        dom.finalScore.textContent = game.score;
+        dom.restartButton.focus();
     }
 }
 
 function render() {
     renderBoard();
+    renderNextPreview();
     renderHud();
+    renderGameOver();
 }
 
 //LOGIC: KHỐI RƠI
@@ -235,7 +314,13 @@ function merge(arena, player) {
 
 // Sinh khối ngẫu nhiên ở giữa đỉnh bàn chơi. Trả về false nếu vừa sinh ra đã va chạm (thua).
 function spawnPiece() {
-    player.matrix = createPiece(randomPieceType());
+    if (nextPieceType === null) {
+        nextPieceType = randomPieceType();
+    }
+    const currentType = nextPieceType;
+    nextPieceType = randomPieceType();
+
+    player.matrix = createPiece(currentType);
     player.pos.y = 0;
     player.pos.x = Math.floor(COLS / 2) - Math.floor(player.matrix[0].length / 2);
     return !collide(arena, player);
@@ -245,6 +330,7 @@ function spawnPiece() {
 function startGame() {
     resetState();
     spawnPiece();
+    dropCounter = 0;
 }
 
 // Kiểm tra một hàng đã được lấp đầy chưa (không còn ô nào bằng 0)
@@ -284,13 +370,16 @@ function playerDrop() {
         game.score += LINE_CLEAR_SCORES[clearedCount];
 
         if (!spawnPiece()) {
-            startGame();
+            game.isOver = true; // Khối mới không còn chỗ xuất hiện -> thua
         }
     }
     dropCounter = 0;
 }
 //Xử lý sự kiện bàn phím
 window.addEventListener('keydown', function (event) {
+    if (game.isOver) {
+        return;
+    }
     if (event.code === 'KeyA') {
         playerMove(-1);
     } else if (event.code === 'KeyD') {
@@ -356,14 +445,23 @@ function update(time) {
     const deltaTime = time - lastTime;
     lastTime = time;
 
-    dropCounter += deltaTime;
-    if (dropCounter >= DROP_INTERVAL_MS) {
-        playerDrop();
+    // khi thua, dừng rơi khối
+    if (!game.isOver) {
+        dropCounter += deltaTime;
+        if (dropCounter >= DROP_INTERVAL_MS) {
+            playerDrop();
+        }
     }
 
     render();
     requestAnimationFrame(update);
 }
+
+// Nút "Chơi lại" trong popup Game Over
+dom.restartButton.addEventListener('click', function () {
+    startGame();
+    render();
+});
 
 initRenderer();
 startGame();

@@ -12,12 +12,13 @@
 
 
     <div class="play-area">
-        <div class="board-wrapper">
-            <div id="board" class="board" aria-label="Bàn chơi Tetris"></div>
-            <div id="level-banner" class="level-banner" role="status" aria-live="polite"></div>
-        </div>
+        <div id="board" class="board" aria-label="Bàn chơi Tetris"></div>
 
         <aside class="side-panel">
+            <div class="stat">
+                <span class="stat-label">TIẾP THEO</span>
+                <div id="next" class="next-grid" aria-label="Khối tiếp theo"></div>
+            </div>
             <div class="stat">
                 <span class="stat-label">SỐ ĐIỂM</span>
                 <span id="score" class="stat-value stat-value--score">0</span>
@@ -31,8 +32,17 @@
 
     <div class="controls-hint">
         <p>A D : Di chuyển sang trái/phải</p>
-        <p>W / Click : Xoay khối hình</p>
+        <p>Space : Xoay khối hình</p>
         <p>S : Thả rơi nhanh</p>
+    </div>
+</div>
+
+<!-- Popup Game Over: thuộc tính hidden được JS bật/tắt theo game.isOver -->
+<div id="game-over" class="overlay" role="dialog" aria-modal="true" aria-labelledby="game-over-title" hidden>
+    <div class="dialog">
+        <h2 id="game-over-title" class="dialog-title">GAME OVER</h2>
+        <p class="dialog-text">Điểm của bạn: <span id="final-score" class="dialog-score">0</span></p>
+        <button id="restart-button" class="button" type="button">Chơi lại</button>
     </div>
 </div>
 
