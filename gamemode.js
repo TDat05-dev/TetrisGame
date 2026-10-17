@@ -8,6 +8,12 @@ const DROP_INTERVAL_MS = 1000;   // Tốc độ rơi: 1 giây / ô
 //thêm điểm nếu như phá được nhiều khối cùng lúc
 const LINE_CLEAR_SCORES = [0, 10, 30, 50, 100];
 
+// LEVEL 2
+const LEVEL_2_SCORE = 50;        // Đạt từ 150 điểm trở lên thì lên Level 2
+const GARBAGE_PIECE_LIMIT = 5;    // Level 2: đặt đủ 5 khối mà chưa phá hàng nào thì tạo 1 hàng rác
+const GARBAGE_BLOCK = 8;          // id màu của ô rác
+const BANNER_DURATION_MS = 2000;
+
 // Hình dạng các khối. Giá trị số = id màu (ánh xạ sang --c1..--c7 trong style.css)
 const PIECES = Object.freeze({
     I: [
@@ -126,6 +132,7 @@ const dom = {
     gameOver: getRequiredElement('game-over'),
     finalScore: getRequiredElement('final-score'),
     restartButton: getRequiredElement('restart-button'),
+    banner: getRequiredElement('level-banner'),
 };
 
 const boardCells = [];
@@ -140,6 +147,7 @@ const rendered = {
     nextType: null,
     isOver: null,
 };
+
 
 function initRenderer() {
     const fragment = document.createDocumentFragment();
@@ -274,6 +282,15 @@ function renderGameOver() {
         dom.restartButton.focus();
     }
 }
+//Hiển thị Banner lên level
+function showBanner(message) {
+    dom.banner.textContent = message;
+    dom.banner.classList.add('is-visible');
+
+    setTimeout(function () {
+        dom.banner.classList.remove('is-visible');
+    }, BANNER_DURATION_MS);
+}
 
 function render() {
     renderBoard();
@@ -360,7 +377,98 @@ function clearFullRows() {
     return clearedCount;
 }
 
-// Hạ khối xuống 1 ô. Nếu không hạ được: thêm khối vào arena, xóa hàng đầy rồi sinh khối mới.
+// ===================== LOGIC: LEVEL =====================
+// Mỗi level là một object riêng, có cùng 3 thành phần:
+//minScore: điểm tối thiểu để vào level này
+//onEnter: chạy 1 lần khi vừa vào level (khởi tạo dữ liệu riêng, hiện thông báo...)
+//onPiecePlaced : chạy mỗi khi 1 khối được chốt xuống bàn chơi, nhận số hàng vừa phá.
+//Trả về false nếu luật của level làm người chơi thua.
+
+// Level 1: chơi bình thường, không có luật thêm
+const level1 = {
+    minScore: 0,
+    onEnter: function () {
+        // Level 1 không có gì cần khởi tạo
+    },
+
+    onPiecePlaced: function (clearedCount) {
+        return true;
+    },
+};
+
+// Level 2: đặt đủ GARBAGE_PIECE_LIMIT (số khối đã đặt) khối mà chưa phá hàng nào thì spawn 1 hàng rác
+const level2 = {
+    minScore: LEVEL_2_SCORE,
+
+    //số khối đã đặt liên tiếp mà chưa phá được hàng nào
+    quantityOfBlocks: 0,
+
+    onEnter: function () {
+        level2.quantityOfBlocks = 0; // Bắt đầu đếm từ lúc vào Level 2
+        showBanner('Level Up');
+    },
+
+    onPiecePlaced: function (clearedCount) {
+        if (clearedCount > 0) {
+            level2.quantityOfBlocks = 0; // Phá được hàng reset bộ đếm
+            return true;
+        }
+
+        level2.quantityOfBlocks++;
+        if (level2.quantityOfBlocks >= GARBAGE_PIECE_LIMIT) {
+            level2.quantityOfBlocks = 0;
+            return addGarbageRow();
+        }
+        return true;
+    },
+};
+
+// Sinh 1 hàng rác từ đáy lên (dùng cho Level 2): mọi hàng spawn lên 1 ô,
+// hàng rác có đúng 1 lỗ ở vị trí ngẫu nhiên. Trả về false nếu hàng trên cùng bị đẩy tràn ra ngoài (thua).
+function addGarbageRow() {
+    for (let x = 0; x < COLS; x++) {
+        if (arena[0][x] !== 0) {
+            return false;
+        }
+    }
+
+    // Rút hàng trên cùng (đang trống) ra, dùng lại chính mảng đó làm hàng rác và đưa xuống đáy
+    const topRow = arena.shift();
+    const holeX = randomInt(COLS);
+    for (let x = 0; x < COLS; x++) {
+        if (x === holeX) {
+            topRow[x] = 0;
+        } else {
+            topRow[x] = GARBAGE_BLOCK;
+        }
+    }
+    arena.push(topRow);
+    return true;
+}
+
+// ----- DANH SÁCH LEVEL -----
+// Tạo mảng luwu danh sách các màn chơi
+const LEVELS = [level1, level2];
+
+// Lấy object của level đang chơi
+function getCurrentLevel() {
+    return LEVELS[game.level - 1];
+}
+
+// Nếu đủ điểm của level kế tiếp thì chuyển sang level đó và gọi onEnter của nó
+function checkLevelUp() {
+    const nextLevel = LEVELS[game.level]; // game.level bắt đầu từ 1 nên LEVELS[game.level] là level kế tiếp
+    if (nextLevel === undefined) {
+        return;
+    }
+    if (game.score >= nextLevel.minScore) {
+        game.level++;
+        nextLevel.onEnter();
+    }
+}
+
+// Hạ khối xuống 1 ô. Nếu không hạ được: thêm khối vào arena, xóa hàng đầy,
+// xử lý level + hàng rác, rồi sinh khối mới.
 function playerDrop() {
     player.pos.y++;
     if (collide(arena, player)) {
@@ -368,9 +476,13 @@ function playerDrop() {
         merge(arena, player);
         const clearedCount = clearFullRows();
         game.score += LINE_CLEAR_SCORES[clearedCount];
+        checkLevelUp();
 
-        if (!spawnPiece()) {
-            game.isOver = true; // Khối mới không còn chỗ xuất hiện -> thua
+        const currentLevel = getCurrentLevel();
+        if (!currentLevel.onPiecePlaced(clearedCount)) {
+            game.isOver = true;
+        } else if (!spawnPiece()) {
+            game.isOver = true;
         }
     }
     dropCounter = 0;

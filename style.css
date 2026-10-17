@@ -17,6 +17,7 @@
     --c5: #3877FF; /* Z */
     --c6: #FFE138; /* S */
     --c7: #FF0D72; /* T */
+    --c8: #6B6B80; /* Hàng rác ở Level 2 */
 
     --panel-bg: #1a1a24;
     --panel-border: #33334d;
@@ -52,6 +53,11 @@ h1 {
     display: flex;
     align-items: flex-start;
     gap: 16px;
+}
+
+/* Khung định vị cho thông báo Level Up nằm đè lên bàn chơi */
+.board-wrapper {
+    position: relative;
 }
 
 .side-panel {
@@ -127,6 +133,33 @@ h1 {
 .cell[data-v="5"] { background-color: var(--c5); }
 .cell[data-v="6"] { background-color: var(--c6); }
 .cell[data-v="7"] { background-color: var(--c7); }
+.cell[data-v="8"] { background-color: var(--c8); }
+
+/* ===== Thông báo Level Up ===== */
+.level-banner {
+    position: absolute;
+    left: 50%;
+    top: 35%;
+    transform: translate(-50%, -50%) scale(0.8);
+    padding: 12px 28px;
+    border-radius: 8px;
+    background: rgba(18, 18, 20, 0.92);
+    border: 1px solid #00f0ff;
+    color: #00f0ff;
+    font-size: 1.6rem;
+    font-weight: bold;
+    letter-spacing: 3px;
+    text-shadow: 0 0 10px rgba(0, 240, 255, 0.6);
+    white-space: nowrap;
+    pointer-events: none; /* Không chặn thao tác lên bàn chơi */
+    opacity: 0;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.level-banner.is-visible {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+}
 
 /* ===== Popup Game Over ===== */
 /* Phủ toàn màn hình, nền tối mờ để làm nổi hộp thoại và chặn click xuống game */

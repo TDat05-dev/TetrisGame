@@ -12,7 +12,11 @@
 
 
     <div class="play-area">
-        <div id="board" class="board" aria-label="Bàn chơi Tetris"></div>
+        <div class="board-wrapper">
+            <div id="board" class="board" aria-label="Bàn chơi Tetris"></div>
+            <!-- Thông báo "Level Up", JS bật/tắt class is-visible -->
+            <div id="level-banner" class="level-banner" role="status" aria-live="polite"></div>
+        </div>
 
         <aside class="side-panel">
             <div class="stat">
@@ -37,7 +41,6 @@
     </div>
 </div>
 
-<!-- Popup Game Over: thuộc tính hidden được JS bật/tắt theo game.isOver -->
 <div id="game-over" class="overlay" role="dialog" aria-modal="true" aria-labelledby="game-over-title" hidden>
     <div class="dialog">
         <h2 id="game-over-title" class="dialog-title">GAME OVER</h2>
