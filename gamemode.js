@@ -9,12 +9,17 @@ const DROP_INTERVAL_MS = 1000;   // Tốc độ rơi: 1 giây / ô
 const LINE_CLEAR_SCORES = [0, 10, 30, 50, 100];
 
 // LEVEL 2
-const LEVEL_2_SCORE = 50;        // Đạt từ 150 điểm trở lên thì lên Level 2
+const LEVEL_2_SCORE = 100;        // Đạt từ 100 điểm trở lên thì lên Level 2
 const GARBAGE_PIECE_LIMIT = 5;    // Level 2: đặt đủ 5 khối mà chưa phá hàng nào thì tạo 1 hàng rác
 const GARBAGE_BLOCK = 8;          // id màu của ô rác
 const BANNER_DURATION_MS = 2000;
 
-// Hình dạng các khối. Giá trị số = id màu (ánh xạ sang --c1..--c7 trong style.css)
+// LEVEL 3
+const LEVEL_3_SCORE = 250;        // Đạt từ 250 điểm trở lên thì lên Level 3
+const BOMB_PIECE_LIMIT = 6;       // Level 3: đặt đủ 6 khối mà chưa phá hàng nào thì khối kế tiếp là khối nổ
+const BOMB_TYPE = 'BOMB';         // Tên loại của khối nổ trong PIECES
+
+// Hình dạng các khối. Giá trị số = id màu (ánh xạ sang --c1..--c9 trong <style> của index.html)
 const PIECES = Object.freeze({
     I: [
         [0, 1, 0, 0],
@@ -51,8 +56,14 @@ const PIECES = Object.freeze({
         [7, 7, 7],
         [0, 0, 0],
     ],
+    // Khối nổ của Level 3: không bao giờ được chọn ngẫu nhiên, chỉ xuất hiện khi Level 3 yêu cầu
+    BOMB: [
+        [9, 9],
+        [9, 9],
+    ],
 });
-const PIECE_TYPES = Object.keys(PIECES);
+// Các loại khối thường được chọn ngẫu nhiên khi spawn (KHÔNG gồm khối nổ)
+const PIECE_TYPES = ['I', 'L', 'J', 'O', 'Z', 'S', 'T'];
 const PREVIEW_SIZE = 4;
 
 //UTILITY
@@ -91,6 +102,7 @@ const arena = createMatrix(COLS, ROWS);
 const player = {
     pos: { x: 0, y: 0 },
     matrix: null,
+    type: null, // Loại khối đang rơi ('I', 'T', 'BOMB'...), dùng để biết có phải khối nổ không
 };
 
 let nextPieceType = null;
@@ -100,6 +112,9 @@ const game = {
     score: 0,
     level: 1,
     isOver: false,
+    isInMenu: true,             // true khi đang ở màn hình chọn màn: game chưa chạy
+    startLevel: 1,              // Level người chơi đã chọn để bắt đầu, dùng lại khi bấm "Chơi lại"
+    pendingSpecialPiece: null,  // Khối đặc biệt (vd khối nổ) được xếp làm khối kế tiếp ở lần spawn sau
 };
 
 // reset trạng thái
@@ -108,10 +123,53 @@ function resetState() {
     player.pos.x = 0;
     player.pos.y = 0;
     player.matrix = null;
+    player.type = null;
     nextPieceType = null;
     game.score = 0;
     game.level = 1;
     game.isOver = false;
+    game.pendingSpecialPiece = null;
+    // KHÔNG reset game.startLevel: cần giữ lại để "Chơi lại" đúng màn đã chọn
+}
+
+// MỞ KHÓA LEVEL
+// Level cao nhất người chơi đã đạt tới. Chỉ được chọn các level <= giá trị này.
+// Lưu vào localStorage để tắt trình duyệt mở lại vẫn còn.
+const UNLOCKED_LEVEL_STORAGE_KEY = 'tetris.unlockedLevel';
+let unlockedLevel = 1; // Giá trị thật được đọc từ localStorage lúc khởi chạy (loadUnlockedLevel)
+
+// Đọc level đã mở khóa. Dữ liệu sai/không đọc được thì coi như mới chỉ mở Level 1.
+function loadUnlockedLevel() {
+    let saved = null;
+    try {
+        saved = localStorage.getItem(UNLOCKED_LEVEL_STORAGE_KEY);
+    } catch (error) {
+        return 1; // Trình duyệt chặn localStorage (chế độ ẩn danh, chặn cookie...)
+    }
+
+    const level = Number(saved);
+    // localStorage có thể bị sửa tay: chỉ chấp nhận số nguyên trong khoảng 1..số level hiện có
+    if (!Number.isInteger(level) || level < 1 || level > LEVELS.length) {
+        return 1;
+    }
+    return level;
+}
+
+// Mở khóa level mới (chỉ tăng, không bao giờ giảm) và lưu lại
+function unlockLevel(level) {
+    if (level <= unlockedLevel) {
+        return;
+    }
+    unlockedLevel = level;
+    try {
+        localStorage.setItem(UNLOCKED_LEVEL_STORAGE_KEY, String(level));
+    } catch (error) {
+        // Không lưu được thì vẫn mở khóa trong lần chơi này, chỉ mất khi tải lại trang
+    }
+}
+
+function isLevelUnlocked(level) {
+    return level <= unlockedLevel;
 }
 
 //RENDERER
@@ -133,6 +191,9 @@ const dom = {
     finalScore: getRequiredElement('final-score'),
     restartButton: getRequiredElement('restart-button'),
     banner: getRequiredElement('level-banner'),
+    levelMenu: getRequiredElement('level-menu'),
+    levelList: getRequiredElement('level-list'),
+    menuButton: getRequiredElement('menu-button'),
 };
 
 const boardCells = [];
@@ -146,6 +207,7 @@ const rendered = {
     level: null,
     nextType: null,
     isOver: null,
+    isInMenu: null,
 };
 
 
@@ -178,6 +240,7 @@ function initRenderer() {
     rendered.level = null;
     rendered.nextType = null;
     rendered.isOver = null;
+    rendered.isInMenu = null;
 }
 
 function renderBoard() {
@@ -292,11 +355,45 @@ function showBanner(message) {
     }, BANNER_DURATION_MS);
 }
 
+// Ẩn/hiện màn hình chọn màn theo game.isInMenu
+function renderLevelMenu() {
+    if (game.isInMenu === rendered.isInMenu) {
+        return;
+    }
+    rendered.isInMenu = game.isInMenu;
+
+    dom.levelMenu.hidden = !game.isInMenu;
+    if (game.isInMenu) {
+        updateLevelLocks(); // Vừa chơi xong có thể đã mở khóa thêm level
+        // Focus vào nút của màn đã chọn lần trước để bấm Enter/Space là vào chơi luôn
+        const buttons = dom.levelList.querySelectorAll('button');
+        buttons[game.startLevel - 1].focus();
+    }
+}
+
+// Khóa/mở các nút chọn màn theo unlockedLevel
+function updateLevelLocks() {
+    const buttons = dom.levelList.querySelectorAll('button');
+    for (let i = 0; i < buttons.length; i++) {
+        const levelNumber = i + 1;
+        const locked = !isLevelUnlocked(levelNumber);
+        const description = buttons[i].querySelector('.level-option-desc');
+
+        buttons[i].disabled = locked; // Nút disabled: không click được, không focus được bằng Tab
+        if (locked) {
+            description.textContent = `Đã khóa: hãy đạt Level ${levelNumber} khi chơi để mở`;
+        } else {
+            description.textContent = LEVELS[i].description;
+        }
+    }
+}
+
 function render() {
     renderBoard();
     renderNextPreview();
     renderHud();
     renderGameOver();
+    renderLevelMenu();
 }
 
 //LOGIC: KHỐI RƠI
@@ -335,19 +432,46 @@ function spawnPiece() {
         nextPieceType = randomPieceType();
     }
     const currentType = nextPieceType;
-    nextPieceType = randomPieceType();
 
+    // Có khối đặc biệt đang chờ (vd Level 3 yêu cầu khối nổ) thì cho nó làm khối kế tiếp,
+    // để người chơi thấy trước ở ô TIẾP THEO. Không có thì chọn ngẫu nhiên như bình thường.
+    if (game.pendingSpecialPiece !== null) {
+        nextPieceType = game.pendingSpecialPiece;
+        game.pendingSpecialPiece = null;
+    } else {
+        nextPieceType = randomPieceType();
+    }
+
+    player.type = currentType;
     player.matrix = createPiece(currentType);
     player.pos.y = 0;
     player.pos.x = Math.floor(COLS / 2) - Math.floor(player.matrix[0].length / 2);
     return !collide(arena, player);
 }
 
-// Bắt đầu ván mới: xoá sạch state rồi sinh khối đầu tiên
-function startGame() {
+// Bắt đầu ván mới ở level được chọn: xoá sạch state, vào level đó rồi sinh khối đầu tiên
+function startGame(startLevel) {
+    if (!Number.isInteger(startLevel) || startLevel < 1 || startLevel > LEVELS.length) {
+        throw new RangeError(`startGame: level phải từ 1 đến ${LEVELS.length}, nhận được ${startLevel}`);
+    }
+
     resetState();
+    game.startLevel = startLevel;
+    game.level = startLevel;
+    game.isInMenu = false;
+    LEVELS[startLevel - 1].onEnter(); // Khởi tạo dữ liệu riêng của level bắt đầu
+
     spawnPiece();
     dropCounter = 0;
+    if (startLevel > 1) {
+        showBanner(`Level ${startLevel}`);
+    }
+}
+
+// Quay về màn hình chọn màn
+function openLevelMenu() {
+    resetState();
+    game.isInMenu = true;
 }
 
 // Kiểm tra một hàng đã được lấp đầy chưa (không còn ô nào bằng 0)
@@ -386,6 +510,8 @@ function clearFullRows() {
 
 // Level 1: chơi bình thường, không có luật thêm
 const level1 = {
+    name: 'Level 1',
+    description: 'Chơi cơ bản',
     minScore: 0,
     onEnter: function () {
         // Level 1 không có gì cần khởi tạo
@@ -398,6 +524,8 @@ const level1 = {
 
 // Level 2: đặt đủ GARBAGE_PIECE_LIMIT (số khối đã đặt) khối mà chưa phá hàng nào thì spawn 1 hàng rác
 const level2 = {
+    name: 'Level 2',
+    description: `Cứ ${GARBAGE_PIECE_LIMIT} khối không phá hàng thì trồi 1 hàng rác`,
     minScore: LEVEL_2_SCORE,
 
     //số khối đã đặt liên tiếp mà chưa phá được hàng nào
@@ -405,7 +533,6 @@ const level2 = {
 
     onEnter: function () {
         level2.quantityOfBlocks = 0; // Bắt đầu đếm từ lúc vào Level 2
-        showBanner('Level Up');
     },
 
     onPiecePlaced: function (clearedCount) {
@@ -446,9 +573,52 @@ function addGarbageRow() {
     return true;
 }
 
+// Level 3: đặt đủ BOMB_PIECE_LIMIT khối mà chưa phá hàng nào thì khối kế tiếp là khối nổ.
+// Khối nổ (2x2) khi chạm sàn hoặc khối khác sẽ nổ, xóa 2x2 ô ngay bên dưới nó.
+const level3 = {
+    name: 'Level 3',
+    description: `Cứ ${BOMB_PIECE_LIMIT} khối không phá hàng thì tặng 1 khối nổ`,
+    minScore: LEVEL_3_SCORE,
+
+    // Số khối đã đặt liên tiếp mà chưa phá được hàng nào
+    quantityOfBlocks: 0,
+
+    onEnter: function () {
+        level3.quantityOfBlocks = 0; // Bắt đầu đếm từ lúc vào Level 3
+    },
+
+    onPiecePlaced: function (clearedCount) {
+        if (clearedCount > 0) {
+            level3.quantityOfBlocks = 0; // Phá được hàng reset bộ đếm
+            return true;
+        }
+
+        level3.quantityOfBlocks++;
+        if (level3.quantityOfBlocks >= BOMB_PIECE_LIMIT) {
+            level3.quantityOfBlocks = 0;
+            game.pendingSpecialPiece = BOMB_TYPE; // Lần spawn tới: khối kế tiếp sẽ là khối nổ
+        }
+        return true; // Khối nổ không bao giờ làm người chơi thua
+    },
+};
+
+// Khối nổ phát nổ (dùng cho Level 3): bản thân khối nổ biến mất, không được ghi vào arena,
+// và xóa 2x2 ô nằm ngay bên dưới nó. Phần nằm ngoài bàn chơi (khi nổ ở sát đáy) thì bỏ qua.
+function explodeBomb() {
+    const size = player.matrix.length;          // Khối nổ là ma trận 2x2 -> size = 2
+    const startY = player.pos.y + size;         // Hàng đầu tiên ngay dưới khối nổ
+    for (let y = startY; y < startY + size; y++) {
+        for (let x = player.pos.x; x < player.pos.x + size; x++) {
+            if (y >= 0 && y < ROWS && x >= 0 && x < COLS) {
+                arena[y][x] = 0;
+            }
+        }
+    }
+}
+
 // ----- DANH SÁCH LEVEL -----
-// Tạo mảng luwu danh sách các màn chơi
-const LEVELS = [level1, level2];
+// Tạo mảng lưu danh sách các màn chơi
+const LEVELS = [level1, level2, level3];
 
 // Lấy object của level đang chơi
 function getCurrentLevel() {
@@ -464,6 +634,8 @@ function checkLevelUp() {
     if (game.score >= nextLevel.minScore) {
         game.level++;
         nextLevel.onEnter();
+        unlockLevel(game.level); // Đã chơi tới level này -> lần sau được chọn thẳng từ menu
+        showBanner('Level Up');
     }
 }
 
@@ -473,7 +645,14 @@ function playerDrop() {
     player.pos.y++;
     if (collide(arena, player)) {
         player.pos.y--;
-        merge(arena, player);
+
+        // Khối nổ thì phát nổ thay vì nằm lại trên bàn chơi
+        if (player.type === BOMB_TYPE) {
+            explodeBomb();
+        } else {
+            merge(arena, player);
+        }
+
         const clearedCount = clearFullRows();
         game.score += LINE_CLEAR_SCORES[clearedCount];
         checkLevelUp();
@@ -489,7 +668,8 @@ function playerDrop() {
 }
 //Xử lý sự kiện bàn phím
 window.addEventListener('keydown', function (event) {
-    if (game.isOver) {
+    // Đang thua hoặc đang ở menu: khóa điều khiển, để Enter/Space tác động lên nút đang được focus
+    if (game.isOver || game.isInMenu) {
         return;
     }
     if (event.code === 'KeyA') {
@@ -557,8 +737,8 @@ function update(time) {
     const deltaTime = time - lastTime;
     lastTime = time;
 
-    // khi thua, dừng rơi khối
-    if (!game.isOver) {
+    // Khi thua hoặc đang ở menu thì dừng rơi khối
+    if (!game.isOver && !game.isInMenu) {
         dropCounter += deltaTime;
         if (dropCounter >= DROP_INTERVAL_MS) {
             playerDrop();
@@ -569,13 +749,54 @@ function update(time) {
     requestAnimationFrame(update);
 }
 
-// Nút "Chơi lại" trong popup Game Over
+// Tạo các nút chọn màn từ danh sách LEVELS, thêm level mới vào LEVELS là tự có nút
+function initLevelMenu() {
+    const fragment = document.createDocumentFragment();
+    for (let i = 0; i < LEVELS.length; i++) {
+        const levelNumber = i + 1;
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'level-option';
+
+        const title = document.createElement('span');
+        title.className = 'level-option-title';
+        title.textContent = LEVELS[i].name;
+
+        const description = document.createElement('span');
+        description.className = 'level-option-desc';
+        description.textContent = LEVELS[i].description;
+
+        button.appendChild(title);
+        button.appendChild(description);
+        button.addEventListener('click', function () {
+            // Phòng thủ thêm: nút đã disabled nhưng vẫn kiểm tra lại, phòng trường hợp
+            // ai đó bỏ thuộc tính disabled bằng DevTools
+            if (!isLevelUnlocked(levelNumber)) {
+                return;
+            }
+            startGame(levelNumber);
+            render();
+        });
+        fragment.appendChild(button);
+    }
+    dom.levelList.replaceChildren(fragment);
+}
+
+// Nút "Chơi lại" trong popup Game Over: chơi lại đúng màn đã chọn
 dom.restartButton.addEventListener('click', function () {
-    startGame();
+    startGame(game.startLevel);
     render();
 });
 
+// Nút "Chọn màn" trong popup Game Over: quay về màn hình chọn màn
+dom.menuButton.addEventListener('click', function () {
+    openLevelMenu();
+    render();
+});
+
+unlockedLevel = loadUnlockedLevel(); // Đọc sau khi đã có LEVELS để kiểm tra giá trị hợp lệ
 initRenderer();
-startGame();
+initLevelMenu();
 render();
 requestAnimationFrame(update);
