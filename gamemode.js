@@ -1,26 +1,26 @@
 'use strict';
 
-//CẤU HÌNH
+// ===== CAU HINH =====
 const COLS = 10;
 const ROWS = 20;
-const DROP_INTERVAL_MS = 1000;   // Tốc độ rơi: 1 giây / ô
+const DROP_INTERVAL_MS = 1000; // 1 giây rơi 1 ô
 
-//thêm điểm nếu như phá được nhiều khối cùng lúc
+// điểm khi phá 0, 1, 2, 3, 4 hàng cùng lúc
 const LINE_CLEAR_SCORES = [0, 10, 30, 50, 100];
 
-// LEVEL 2
-const LEVEL_2_SCORE = 100;        // Đạt từ 100 điểm trở lên thì lên Level 2
-const GARBAGE_PIECE_LIMIT = 5;    // Level 2: đặt đủ 5 khối mà chưa phá hàng nào thì tạo 1 hàng rác
-const GARBAGE_BLOCK = 8;          // id màu của ô rác
+// level 2
+const LEVEL_2_SCORE = 100;
+const GARBAGE_PIECE_LIMIT = 5; // đặt 5 khối không phá được hàng nào thì thêm hàng rác
+const GARBAGE_BLOCK = 8;       // màu ô rác
 const BANNER_DURATION_MS = 2000;
 
-// LEVEL 3
-const LEVEL_3_SCORE = 250;        // Đạt từ 250 điểm trở lên thì lên Level 3
-const BOMB_PIECE_LIMIT = 6;       // Level 3: đặt đủ 6 khối mà chưa phá hàng nào thì khối kế tiếp là khối nổ
-const BOMB_TYPE = 'BOMB';         // Tên loại của khối nổ trong PIECES
+// level 3
+const LEVEL_3_SCORE = 250;
+const BOMB_PIECE_LIMIT = 6;    // đặt 6 khối không phá được hàng nào thì cho khối bom
+const BOMB_TYPE = 'BOMB';
 
-// Hình dạng các khối. Giá trị số = id màu (ánh xạ sang --c1..--c9 trong <style> của index.html)
-const PIECES = Object.freeze({
+// các khối, số là màu của khối (--c1 đến --c9 trong css)
+const PIECES = {
     I: [
         [0, 1, 0, 0],
         [0, 1, 0, 0],
@@ -56,70 +56,76 @@ const PIECES = Object.freeze({
         [7, 7, 7],
         [0, 0, 0],
     ],
-    // Khối nổ của Level 3: không bao giờ được chọn ngẫu nhiên, chỉ xuất hiện khi Level 3 yêu cầu
+    // khối bom của level 3
     BOMB: [
         [9, 9],
         [9, 9],
     ],
-});
-// Các loại khối thường được chọn ngẫu nhiên khi spawn (KHÔNG gồm khối nổ)
+};
+
+// các khối được random (không có bom)
 const PIECE_TYPES = ['I', 'L', 'J', 'O', 'Z', 'S', 'T'];
 const PREVIEW_SIZE = 4;
 
-//UTILITY
+// ===== HAM PHU =====
 
-// Trả về số nguyên ngẫu nhiên trong khoảng [0, max - 1] để khởi tạo khối
+// random số từ 0 đến max - 1
 function randomInt(max) {
-    if (!Number.isInteger(max) || max <= 0) {
-        throw new RangeError(`randomInt: max phải là số nguyên dương, nhận được ${max}`);
-    }
     return Math.floor(Math.random() * max);
 }
 
-// Tạo ma trận width x height toàn số 0 (0 = ô trống)
+// tạo ma trận toàn số 0
 function createMatrix(width, height) {
-    return Array.from({ length: height }, () => new Array(width).fill(0));
+    const matrix = [];
+    for (let y = 0; y < height; y++) {
+        const row = [];
+        for (let x = 0; x < width; x++) {
+            row.push(0);
+        }
+        matrix.push(row);
+    }
+    return matrix;
 }
 
-// Trả về BẢN SAO của khối mẫu trong PIECES để không ai sửa nhầm vào khối mẫu
+// copy khối từ PIECES ra để không bị sửa vào khối gốc
 function createPiece(type) {
-    const template = PIECES[type];
-    if (!template) {
-        throw new Error(`createPiece: không có khối loại "${type}"`);
+    const piece = PIECES[type];
+    const copy = [];
+    for (let y = 0; y < piece.length; y++) {
+        copy.push(piece[y].slice());
     }
-    return template.map(row => [...row]);
+    return copy;
 }
 
 function randomPieceType() {
     return PIECE_TYPES[randomInt(PIECE_TYPES.length)];
 }
 
-//STATE
-// tạo bàn chơi
-const arena = createMatrix(COLS, ROWS);
+// ===== DU LIEU GAME =====
+const arena = createMatrix(COLS, ROWS); // bàn chơi
 
-// Khối đang rơi
+// khối đang rơi
 const player = {
     pos: { x: 0, y: 0 },
     matrix: null,
-    type: null, // Loại khối đang rơi ('I', 'T', 'BOMB'...), dùng để biết có phải khối nổ không
+    type: null, // tên khối, dùng để biết có phải bom không
 };
 
-let nextPieceType = null;
+let nextPieceType = null; // khối tiếp theo
 
-// Trạng thái chung của ván chơi
 const game = {
     score: 0,
     level: 1,
     isOver: false,
-    isInMenu: true,             // true khi đang ở màn hình chọn màn: game chưa chạy
-    startLevel: 1,              // Level người chơi đã chọn để bắt đầu, dùng lại khi bấm "Chơi lại"
-    pendingSpecialPiece: null,  // Khối đặc biệt (vd khối nổ) được xếp làm khối kế tiếp ở lần spawn sau
+    isInMenu: true,           // đang ở màn chọn level
+    startLevel: 1,            // level đã chọn, để bấm chơi lại
+    pendingSpecialPiece: null // khối đặc biệt (bom) sẽ làm khối tiếp theo
 };
 
-// reset trạng thái
 function resetState() {
-    arena.forEach(row => row.fill(0));
+    for (let y = 0; y < ROWS; y++) {
+        arena[y].fill(0);
+    }
     player.pos.x = 0;
     player.pos.y = 0;
     player.matrix = null;
@@ -129,42 +135,37 @@ function resetState() {
     game.level = 1;
     game.isOver = false;
     game.pendingSpecialPiece = null;
-    // KHÔNG reset game.startLevel: cần giữ lại để "Chơi lại" đúng màn đã chọn
+    // không reset startLevel vì nút chơi lại cần dùng
 }
 
-// MỞ KHÓA LEVEL
-// Level cao nhất người chơi đã đạt tới. Chỉ được chọn các level <= giá trị này.
-// Lưu vào localStorage để tắt trình duyệt mở lại vẫn còn.
+// ===== MO KHOA LEVEL =====
+// lưu level cao nhất đã chơi tới vào localStorage
 const UNLOCKED_LEVEL_STORAGE_KEY = 'tetris.unlockedLevel';
-let unlockedLevel = 1; // Giá trị thật được đọc từ localStorage lúc khởi chạy (loadUnlockedLevel)
+let unlockedLevel = 1;
 
-// Đọc level đã mở khóa. Dữ liệu sai/không đọc được thì coi như mới chỉ mở Level 1.
 function loadUnlockedLevel() {
-    let saved = null;
+    let level = 1;
     try {
-        saved = localStorage.getItem(UNLOCKED_LEVEL_STORAGE_KEY);
-    } catch (error) {
-        return 1; // Trình duyệt chặn localStorage (chế độ ẩn danh, chặn cookie...)
+        level = Number(localStorage.getItem(UNLOCKED_LEVEL_STORAGE_KEY));
+    } catch (e) {
+        return 1;
     }
-
-    const level = Number(saved);
-    // localStorage có thể bị sửa tay: chỉ chấp nhận số nguyên trong khoảng 1..số level hiện có
+    // nếu giá trị bị sai thì cho về level 1
     if (!Number.isInteger(level) || level < 1 || level > LEVELS.length) {
         return 1;
     }
     return level;
 }
 
-// Mở khóa level mới (chỉ tăng, không bao giờ giảm) và lưu lại
 function unlockLevel(level) {
     if (level <= unlockedLevel) {
         return;
     }
     unlockedLevel = level;
     try {
-        localStorage.setItem(UNLOCKED_LEVEL_STORAGE_KEY, String(level));
-    } catch (error) {
-        // Không lưu được thì vẫn mở khóa trong lần chơi này, chỉ mất khi tải lại trang
+        localStorage.setItem(UNLOCKED_LEVEL_STORAGE_KEY, level);
+    } catch (e) {
+        // không lưu được thì thôi
     }
 }
 
@@ -172,36 +173,33 @@ function isLevelUnlocked(level) {
     return level <= unlockedLevel;
 }
 
-//RENDERER
-
-function getRequiredElement(id) {
-    const element = document.getElementById(id);
-    if (!element) {
-        throw new Error(`Renderer: không tìm thấy phần tử #${id} trong index.html`);
-    }
-    return element;
-}
-
+// ===== VE GIAO DIEN =====
 const dom = {
-    board: getRequiredElement('board'),
-    score: getRequiredElement('score'),
-    level: getRequiredElement('level'),
-    next: getRequiredElement('next'),
-    gameOver: getRequiredElement('game-over'),
-    finalScore: getRequiredElement('final-score'),
-    restartButton: getRequiredElement('restart-button'),
-    banner: getRequiredElement('level-banner'),
-    levelMenu: getRequiredElement('level-menu'),
-    levelList: getRequiredElement('level-list'),
-    menuButton: getRequiredElement('menu-button'),
+    board: document.getElementById('board'),
+    score: document.getElementById('score'),
+    level: document.getElementById('level'),
+    next: document.getElementById('next'),
+    gameOver: document.getElementById('game-over'),
+    finalScore: document.getElementById('final-score'),
+    restartButton: document.getElementById('restart-button'),
+    banner: document.getElementById('level-banner'),
+    levelMenu: document.getElementById('level-menu'),
+    levelList: document.getElementById('level-list'),
+    menuButton: document.getElementById('menu-button'),
 };
 
 const boardCells = [];
 const previewCells = [];
 
-const frame = new Array(COLS * ROWS).fill(0);
-const prevFrame = new Array(COLS * ROWS).fill(0);
+// frame là hình sắp vẽ, prevFrame là hình đang hiện trên màn hình
+const frame = [];
+const prevFrame = [];
+for (let i = 0; i < COLS * ROWS; i++) {
+    frame.push(0);
+    prevFrame.push(0);
+}
 
+// lưu lại giá trị đã vẽ, cái nào không đổi thì không vẽ lại
 const rendered = {
     score: null,
     level: null,
@@ -210,30 +208,27 @@ const rendered = {
     isInMenu: null,
 };
 
-
+// tạo các ô div cho bàn chơi và ô khối tiếp theo
 function initRenderer() {
-    const fragment = document.createDocumentFragment();
+    dom.board.innerHTML = '';
     boardCells.length = 0;
     for (let i = 0; i < COLS * ROWS; i++) {
         const cell = document.createElement('div');
         cell.className = 'cell';
         cell.dataset.v = 0;
-        fragment.appendChild(cell);
+        dom.board.appendChild(cell);
         boardCells.push(cell);
     }
-    dom.board.replaceChildren(fragment);
 
-    // Tạo 16 ô cho lưới xem trước khối kế tiếp
-    const previewFragment = document.createDocumentFragment();
+    dom.next.innerHTML = '';
     previewCells.length = 0;
     for (let i = 0; i < PREVIEW_SIZE * PREVIEW_SIZE; i++) {
         const cell = document.createElement('div');
         cell.className = 'cell';
         cell.dataset.v = 0;
-        previewFragment.appendChild(cell);
+        dom.next.appendChild(cell);
         previewCells.push(cell);
     }
-    dom.next.replaceChildren(previewFragment);
 
     prevFrame.fill(0);
     rendered.score = null;
@@ -244,27 +239,28 @@ function initRenderer() {
 }
 
 function renderBoard() {
-    // 1. Chép các khối đã đặt từ arena vào frame
+    // chép bàn chơi vào frame
     for (let y = 0; y < ROWS; y++) {
         for (let x = 0; x < COLS; x++) {
             frame[y * COLS + x] = arena[y][x];
         }
     }
 
-    // 2. Chồng khối đang rơi lên trên, bỏ qua phần nằm ngoài bàn chơi
-    if (player.matrix) {
-        player.matrix.forEach((row, y) => {
-            row.forEach((value, x) => {
+    // vẽ thêm khối đang rơi
+    if (player.matrix !== null) {
+        for (let y = 0; y < player.matrix.length; y++) {
+            for (let x = 0; x < player.matrix[y].length; x++) {
+                const value = player.matrix[y][x];
                 const ax = x + player.pos.x;
                 const ay = y + player.pos.y;
                 if (value !== 0 && ax >= 0 && ax < COLS && ay >= 0 && ay < ROWS) {
                     frame[ay * COLS + ax] = value;
                 }
-            });
-        });
+            }
+        }
     }
 
-    // 3. Chỉ cập nhật DOM ở những ô khác với lần vẽ trước
+    // chỉ sửa những ô bị thay đổi
     for (let i = 0; i < frame.length; i++) {
         if (frame[i] !== prevFrame[i]) {
             boardCells[i].dataset.v = frame[i];
@@ -273,14 +269,13 @@ function renderBoard() {
     }
 }
 
-// Vẽ khối kế tiếp vào lưới xem trước, căn giữa theo phần có màu của khối
+// vẽ khối tiếp theo vào ô 4x4
 function renderNextPreview() {
     if (nextPieceType === rendered.nextType) {
-        return; // Khối kế tiếp chưa đổi -> không cần vẽ lại
+        return;
     }
     rendered.nextType = nextPieceType;
 
-    // Xóa trắng lưới
     for (let i = 0; i < previewCells.length; i++) {
         previewCells[i].dataset.v = 0;
     }
@@ -290,6 +285,7 @@ function renderNextPreview() {
 
     const matrix = PIECES[nextPieceType];
 
+    // tìm phần có màu của khối để canh giữa
     let minX = matrix.length;
     let maxX = -1;
     let minY = matrix.length;
@@ -305,10 +301,10 @@ function renderNextPreview() {
         }
     }
 
-    const pieceWidth = maxX - minX + 1;
-    const pieceHeight = maxY - minY + 1;
-    const offsetX = Math.floor((PREVIEW_SIZE - pieceWidth) / 2) - minX;
-    const offsetY = Math.floor((PREVIEW_SIZE - pieceHeight) / 2) - minY;
+    const width = maxX - minX + 1;
+    const height = maxY - minY + 1;
+    const offsetX = Math.floor((PREVIEW_SIZE - width) / 2) - minX;
+    const offsetY = Math.floor((PREVIEW_SIZE - height) / 2) - minY;
 
     for (let y = 0; y < matrix.length; y++) {
         for (let x = 0; x < matrix[y].length; x++) {
@@ -320,7 +316,7 @@ function renderNextPreview() {
     }
 }
 
-// Cập nhật điểm và level
+// cập nhật điểm và level
 function renderHud() {
     if (game.score !== rendered.score) {
         dom.score.textContent = game.score;
@@ -332,7 +328,7 @@ function renderHud() {
     }
 }
 
-// Ẩn/hiện popup Game Over theo game.isOver
+// hiện / ẩn popup game over
 function renderGameOver() {
     if (game.isOver === rendered.isOver) {
         return;
@@ -345,7 +341,8 @@ function renderGameOver() {
         dom.restartButton.focus();
     }
 }
-//Hiển thị Banner lên level
+
+// hiện thông báo rồi 2 giây sau tắt
 function showBanner(message) {
     dom.banner.textContent = message;
     dom.banner.classList.add('is-visible');
@@ -355,7 +352,7 @@ function showBanner(message) {
     }, BANNER_DURATION_MS);
 }
 
-// Ẩn/hiện màn hình chọn màn theo game.isInMenu
+// hiện / ẩn màn chọn level
 function renderLevelMenu() {
     if (game.isInMenu === rendered.isInMenu) {
         return;
@@ -364,26 +361,25 @@ function renderLevelMenu() {
 
     dom.levelMenu.hidden = !game.isInMenu;
     if (game.isInMenu) {
-        updateLevelLocks(); // Vừa chơi xong có thể đã mở khóa thêm level
-        // Focus vào nút của màn đã chọn lần trước để bấm Enter/Space là vào chơi luôn
+        updateLevelLocks();
         const buttons = dom.levelList.querySelectorAll('button');
         buttons[game.startLevel - 1].focus();
     }
 }
 
-// Khóa/mở các nút chọn màn theo unlockedLevel
+// khóa các level chưa chơi tới
 function updateLevelLocks() {
     const buttons = dom.levelList.querySelectorAll('button');
     for (let i = 0; i < buttons.length; i++) {
         const levelNumber = i + 1;
-        const locked = !isLevelUnlocked(levelNumber);
-        const description = buttons[i].querySelector('.level-option-desc');
+        const desc = buttons[i].querySelector('.level-option-desc');
 
-        buttons[i].disabled = locked; // Nút disabled: không click được, không focus được bằng Tab
-        if (locked) {
-            description.textContent = `Đã khóa: hãy đạt Level ${levelNumber} khi chơi để mở`;
+        if (isLevelUnlocked(levelNumber)) {
+            buttons[i].disabled = false;
+            desc.textContent = LEVELS[i].description;
         } else {
-            description.textContent = LEVELS[i].description;
+            buttons[i].disabled = true;
+            desc.textContent = 'Đã khóa: hãy đạt Level ' + levelNumber + ' khi chơi để mở';
         }
     }
 }
@@ -396,45 +392,54 @@ function render() {
     renderLevelMenu();
 }
 
-//LOGIC: KHỐI RƠI
-// Kiểm tra khối của player ở vị trí hiện tại có đè lên tường, đáy hoặc khối đã đặt không
+// ===== XU LY KHOI =====
+
+// kiểm tra khối có đụng tường, đáy hoặc khối khác không
 function collide(arena, player) {
-    const { matrix, pos } = player;
+    const matrix = player.matrix;
+    const pos = player.pos;
     for (let y = 0; y < matrix.length; y++) {
         for (let x = 0; x < matrix[y].length; x++) {
-            if (matrix[y][x] === 0) continue; // Ô trống trong ma trận khối thì không tính
-
+            if (matrix[y][x] === 0) {
+                continue;
+            }
             const ax = x + pos.x;
             const ay = y + pos.y;
-            if (ax < 0 || ax >= COLS || ay >= ROWS) return true; // Ra ngoài tường trái/phải hoặc thủng đáy
-            if (ay < 0) continue;                                  // Phía trên đỉnh: chưa vào bàn chơi
-            if (arena[ay][ax] !== 0) return true;                  // Đè lên khối đã đặt
+            if (ax < 0 || ax >= COLS || ay >= ROWS) {
+                return true; // ra ngoài tường hoặc dưới đáy
+            }
+            if (ay < 0) {
+                continue; // còn ở trên bàn chơi thì bỏ qua
+            }
+            if (arena[ay][ax] !== 0) {
+                return true; // đụng khối khác
+            }
         }
     }
     return false;
 }
 
-// Ghi khối đang rơi vào arena khi nó đã chạm đáy hoặc chạm khối khác
+// ghi khối vào bàn chơi khi chạm đáy
 function merge(arena, player) {
-    player.matrix.forEach((row, y) => {
-        row.forEach((value, x) => {
+    for (let y = 0; y < player.matrix.length; y++) {
+        for (let x = 0; x < player.matrix[y].length; x++) {
+            const value = player.matrix[y][x];
             const ay = y + player.pos.y;
             if (value !== 0 && ay >= 0) {
                 arena[ay][x + player.pos.x] = value;
             }
-        });
-    });
+        }
+    }
 }
 
-// Sinh khối ngẫu nhiên ở giữa đỉnh bàn chơi. Trả về false nếu vừa sinh ra đã va chạm (thua).
+// tạo khối mới ở giữa phía trên, trả về false nếu không còn chỗ (thua)
 function spawnPiece() {
     if (nextPieceType === null) {
         nextPieceType = randomPieceType();
     }
     const currentType = nextPieceType;
 
-    // Có khối đặc biệt đang chờ (vd Level 3 yêu cầu khối nổ) thì cho nó làm khối kế tiếp,
-    // để người chơi thấy trước ở ô TIẾP THEO. Không có thì chọn ngẫu nhiên như bình thường.
+    // nếu có bom đang chờ thì cho bom làm khối tiếp theo
     if (game.pendingSpecialPiece !== null) {
         nextPieceType = game.pendingSpecialPiece;
         game.pendingSpecialPiece = null;
@@ -449,32 +454,28 @@ function spawnPiece() {
     return !collide(arena, player);
 }
 
-// Bắt đầu ván mới ở level được chọn: xoá sạch state, vào level đó rồi sinh khối đầu tiên
+// bắt đầu chơi ở level đã chọn
 function startGame(startLevel) {
-    if (!Number.isInteger(startLevel) || startLevel < 1 || startLevel > LEVELS.length) {
-        throw new RangeError(`startGame: level phải từ 1 đến ${LEVELS.length}, nhận được ${startLevel}`);
-    }
-
     resetState();
     game.startLevel = startLevel;
     game.level = startLevel;
     game.isInMenu = false;
-    LEVELS[startLevel - 1].onEnter(); // Khởi tạo dữ liệu riêng của level bắt đầu
+    LEVELS[startLevel - 1].onEnter();
 
     spawnPiece();
     dropCounter = 0;
     if (startLevel > 1) {
-        showBanner(`Level ${startLevel}`);
+        showBanner('Level ' + startLevel);
     }
 }
 
-// Quay về màn hình chọn màn
+// quay lại màn chọn level
 function openLevelMenu() {
     resetState();
     game.isInMenu = true;
 }
 
-// Kiểm tra một hàng đã được lấp đầy chưa (không còn ô nào bằng 0)
+// kiểm tra hàng đã đầy chưa
 function isRowFull(row) {
     for (let x = 0; x < row.length; x++) {
         if (row[x] === 0) {
@@ -483,17 +484,19 @@ function isRowFull(row) {
     }
     return true;
 }
-// Xóa tất cả các hàng đầy, các hàng phía trên dồn xuống. Trả về số hàng đã xóa.
+
+// xóa các hàng đầy, trả về số hàng đã xóa
 function clearFullRows() {
     let clearedCount = 0;
     let y = ROWS - 1;
 
     while (y >= 0) {
         if (isRowFull(arena[y])) {
-            const removedRow = arena.splice(y, 1)[0];// căt hàng đã full ra khỏi arena
-            removedRow.fill(0); //fill hàm vừa cắt bằng số 0
-            arena.unshift(removedRow);//đưa hàn vừa fill lên đầu
+            const removedRow = arena.splice(y, 1)[0]; // cắt hàng đầy ra
+            removedRow.fill(0);                       // làm trống hàng đó
+            arena.unshift(removedRow);                // đưa lên trên cùng
             clearedCount++;
+            // không giảm y vì hàng phía trên vừa rớt xuống vị trí y
         } else {
             y--;
         }
@@ -501,20 +504,17 @@ function clearFullRows() {
     return clearedCount;
 }
 
-// ===================== LOGIC: LEVEL =====================
-// Mỗi level là một object riêng, có cùng 3 thành phần:
-//minScore: điểm tối thiểu để vào level này
-//onEnter: chạy 1 lần khi vừa vào level (khởi tạo dữ liệu riêng, hiện thông báo...)
-//onPiecePlaced : chạy mỗi khi 1 khối được chốt xuống bàn chơi, nhận số hàng vừa phá.
-//Trả về false nếu luật của level làm người chơi thua.
+// ===== CAC LEVEL =====
+// mỗi level có: minScore (điểm để lên level), onEnter (chạy khi vào level),
+// onPiecePlaced (chạy mỗi lần đặt khối, trả về false nếu thua)
 
-// Level 1: chơi bình thường, không có luật thêm
+// level 1: chơi bình thường
 const level1 = {
     name: 'Level 1',
     description: 'Chơi cơ bản',
     minScore: 0,
+
     onEnter: function () {
-        // Level 1 không có gì cần khởi tạo
     },
 
     onPiecePlaced: function (clearedCount) {
@@ -522,22 +522,20 @@ const level1 = {
     },
 };
 
-// Level 2: đặt đủ GARBAGE_PIECE_LIMIT (số khối đã đặt) khối mà chưa phá hàng nào thì spawn 1 hàng rác
+// level 2: đặt 5 khối mà không phá được hàng nào thì thêm 1 hàng rác
 const level2 = {
     name: 'Level 2',
-    description: `Cứ ${GARBAGE_PIECE_LIMIT} khối không phá hàng thì trồi 1 hàng rác`,
+    description: 'Cứ ' + GARBAGE_PIECE_LIMIT + ' khối không phá hàng thì trồi 1 hàng rác',
     minScore: LEVEL_2_SCORE,
-
-    //số khối đã đặt liên tiếp mà chưa phá được hàng nào
-    quantityOfBlocks: 0,
+    quantityOfBlocks: 0, // đếm số khối đã đặt mà chưa phá hàng
 
     onEnter: function () {
-        level2.quantityOfBlocks = 0; // Bắt đầu đếm từ lúc vào Level 2
+        level2.quantityOfBlocks = 0;
     },
 
     onPiecePlaced: function (clearedCount) {
         if (clearedCount > 0) {
-            level2.quantityOfBlocks = 0; // Phá được hàng reset bộ đếm
+            level2.quantityOfBlocks = 0;
             return true;
         }
 
@@ -550,63 +548,60 @@ const level2 = {
     },
 };
 
-// Sinh 1 hàng rác từ đáy lên (dùng cho Level 2): mọi hàng spawn lên 1 ô,
-// hàng rác có đúng 1 lỗ ở vị trí ngẫu nhiên. Trả về false nếu hàng trên cùng bị đẩy tràn ra ngoài (thua).
+// thêm 1 hàng rác ở dưới cùng, có 1 lỗ random
+// trả về false nếu hàng trên cùng có khối (bị đẩy ra ngoài => thua)
 function addGarbageRow() {
+    // phải kiểm tra trước khi lấy hàng ra, không thì bàn chơi bị thiếu 1 hàng
     for (let x = 0; x < COLS; x++) {
         if (arena[0][x] !== 0) {
             return false;
         }
     }
 
-    // Rút hàng trên cùng (đang trống) ra, dùng lại chính mảng đó làm hàng rác và đưa xuống đáy
-    const topRow = arena.shift();
-    const holeX = randomInt(COLS);
+    // lấy hàng trên cùng ra làm hàng rác rồi đưa xuống dưới
+    const row = arena.shift();
+    const hole = randomInt(COLS);
     for (let x = 0; x < COLS; x++) {
-        if (x === holeX) {
-            topRow[x] = 0;
+        if (x === hole) {
+            row[x] = 0;
         } else {
-            topRow[x] = GARBAGE_BLOCK;
+            row[x] = GARBAGE_BLOCK;
         }
     }
-    arena.push(topRow);
+    arena.push(row);
     return true;
 }
 
-// Level 3: đặt đủ BOMB_PIECE_LIMIT khối mà chưa phá hàng nào thì khối kế tiếp là khối nổ.
-// Khối nổ (2x2) khi chạm sàn hoặc khối khác sẽ nổ, xóa 2x2 ô ngay bên dưới nó.
+// level 3: đặt 6 khối mà không phá được hàng nào thì khối tiếp theo là bom
 const level3 = {
     name: 'Level 3',
-    description: `Cứ ${BOMB_PIECE_LIMIT} khối không phá hàng thì tặng 1 khối nổ`,
+    description: 'Cứ ' + BOMB_PIECE_LIMIT + ' khối không phá hàng thì tặng 1 khối nổ',
     minScore: LEVEL_3_SCORE,
-
-    // Số khối đã đặt liên tiếp mà chưa phá được hàng nào
     quantityOfBlocks: 0,
 
     onEnter: function () {
-        level3.quantityOfBlocks = 0; // Bắt đầu đếm từ lúc vào Level 3
+        level3.quantityOfBlocks = 0;
     },
 
     onPiecePlaced: function (clearedCount) {
         if (clearedCount > 0) {
-            level3.quantityOfBlocks = 0; // Phá được hàng reset bộ đếm
+            level3.quantityOfBlocks = 0;
             return true;
         }
 
         level3.quantityOfBlocks++;
         if (level3.quantityOfBlocks >= BOMB_PIECE_LIMIT) {
             level3.quantityOfBlocks = 0;
-            game.pendingSpecialPiece = BOMB_TYPE; // Lần spawn tới: khối kế tiếp sẽ là khối nổ
+            game.pendingSpecialPiece = BOMB_TYPE;
         }
-        return true; // Khối nổ không bao giờ làm người chơi thua
+        return true;
     },
 };
 
-// Khối nổ phát nổ (dùng cho Level 3): bản thân khối nổ biến mất, không được ghi vào arena,
-// và xóa 2x2 ô nằm ngay bên dưới nó. Phần nằm ngoài bàn chơi (khi nổ ở sát đáy) thì bỏ qua.
+// bom nổ: xóa 2x2 ô ngay dưới bom, bom không được ghi vào bàn chơi
 function explodeBomb() {
-    const size = player.matrix.length;          // Khối nổ là ma trận 2x2 -> size = 2
-    const startY = player.pos.y + size;         // Hàng đầu tiên ngay dưới khối nổ
+    const size = player.matrix.length;
+    const startY = player.pos.y + size;
     for (let y = startY; y < startY + size; y++) {
         for (let x = player.pos.x; x < player.pos.x + size; x++) {
             if (y >= 0 && y < ROWS && x >= 0 && x < COLS) {
@@ -616,37 +611,32 @@ function explodeBomb() {
     }
 }
 
-// ----- DANH SÁCH LEVEL -----
-// Tạo mảng lưu danh sách các màn chơi
 const LEVELS = [level1, level2, level3];
 
-// Lấy object của level đang chơi
 function getCurrentLevel() {
     return LEVELS[game.level - 1];
 }
 
-// Nếu đủ điểm của level kế tiếp thì chuyển sang level đó và gọi onEnter của nó
+// đủ điểm thì lên level tiếp theo
 function checkLevelUp() {
-    const nextLevel = LEVELS[game.level]; // game.level bắt đầu từ 1 nên LEVELS[game.level] là level kế tiếp
+    const nextLevel = LEVELS[game.level]; // level hiện tại là game.level - 1 nên level sau là game.level
     if (nextLevel === undefined) {
-        return;
+        return; // đang ở level cuối
     }
     if (game.score >= nextLevel.minScore) {
         game.level++;
         nextLevel.onEnter();
-        unlockLevel(game.level); // Đã chơi tới level này -> lần sau được chọn thẳng từ menu
+        unlockLevel(game.level);
         showBanner('Level Up');
     }
 }
 
-// Hạ khối xuống 1 ô. Nếu không hạ được: thêm khối vào arena, xóa hàng đầy,
-// xử lý level + hàng rác, rồi sinh khối mới.
+// cho khối rơi xuống 1 ô, chạm đáy thì xử lý rồi tạo khối mới
 function playerDrop() {
     player.pos.y++;
     if (collide(arena, player)) {
         player.pos.y--;
 
-        // Khối nổ thì phát nổ thay vì nằm lại trên bàn chơi
         if (player.type === BOMB_TYPE) {
             explodeBomb();
         } else {
@@ -657,8 +647,8 @@ function playerDrop() {
         game.score += LINE_CLEAR_SCORES[clearedCount];
         checkLevelUp();
 
-        const currentLevel = getCurrentLevel();
-        if (!currentLevel.onPiecePlaced(clearedCount)) {
+        // chạy luật của level hiện tại trước rồi mới tạo khối mới
+        if (!getCurrentLevel().onPiecePlaced(clearedCount)) {
             game.isOver = true;
         } else if (!spawnPiece()) {
             game.isOver = true;
@@ -666,9 +656,10 @@ function playerDrop() {
     }
     dropCounter = 0;
 }
-//Xử lý sự kiện bàn phím
+
+// ===== BAN PHIM =====
 window.addEventListener('keydown', function (event) {
-    // Đang thua hoặc đang ở menu: khóa điều khiển, để Enter/Space tác động lên nút đang được focus
+    // đang thua hoặc ở menu thì không điều khiển
     if (game.isOver || game.isInMenu) {
         return;
     }
@@ -677,17 +668,16 @@ window.addEventListener('keydown', function (event) {
     } else if (event.code === 'KeyD') {
         playerMove(1);
     } else if (event.code === 'KeyS') {
-        playerDrop(); // Có kiểm tra va chạm, chạm đáy thì chốt khối
+        playerDrop();
     } else if (event.code === 'Space') {
         playerRotate();
     } else {
         return;
     }
-
-    event.preventDefault();
+    event.preventDefault(); // để space không cuộn trang
 });
 
-// Di chuyển khối sang trái phải
+// di chuyển trái phải
 function playerMove(dir) {
     player.pos.x += dir;
     if (collide(arena, player)) {
@@ -695,38 +685,41 @@ function playerMove(dir) {
     }
 }
 
-//xoay khối bằng cách xoay ma trận
+// xoay ma trận 90 độ
 function rotateBlock(matrix) {
     const size = matrix.length;
-    const res = createMatrix(size,size);
-    for(let y =0 ; y< size;y++){
-        for(let x =0; x <size;x++){
-            res[y][x]=matrix[size-1-x][y];
+    const res = createMatrix(size, size);
+    for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+            res[y][x] = matrix[size - 1 - x][y];
         }
     }
     return res;
 }
+
+// khi xoay bị kẹt thì thử dịch sang trái phải
 const WALL_KICK_OFFSETS = [0, 1, -1, 2, -2];
 
-function playerRotate(){
-    if(player.matrix=== null){
+function playerRotate() {
+    if (player.matrix === null) {
         return;
     }
-    const originalMatrix = player.matrix;
-        const originalX = player.pos.x;
-        player.matrix = rotateBlock(originalMatrix);
+    const oldMatrix = player.matrix;
+    const oldX = player.pos.x;
+    player.matrix = rotateBlock(oldMatrix);
 
-        for (let i = 0; i < WALL_KICK_OFFSETS.length; i++) {
-            player.pos.x = originalX + WALL_KICK_OFFSETS[i];
-            if (!collide(arena, player)) {
-                return;
-            }
+    for (let i = 0; i < WALL_KICK_OFFSETS.length; i++) {
+        player.pos.x = oldX + WALL_KICK_OFFSETS[i];
+        if (!collide(arena, player)) {
+            return;
         }
-        player.matrix = originalMatrix;
-        player.pos.x = originalX;
+    }
+    // không xoay được thì trả lại như cũ
+    player.matrix = oldMatrix;
+    player.pos.x = oldX;
 }
 
-//GAME LOOP
+// ===== GAME LOOP =====
 let dropCounter = 0;
 let lastTime = null;
 
@@ -737,7 +730,6 @@ function update(time) {
     const deltaTime = time - lastTime;
     lastTime = time;
 
-    // Khi thua hoặc đang ở menu thì dừng rơi khối
     if (!game.isOver && !game.isInMenu) {
         dropCounter += deltaTime;
         if (dropCounter >= DROP_INTERVAL_MS) {
@@ -749,9 +741,10 @@ function update(time) {
     requestAnimationFrame(update);
 }
 
-// Tạo các nút chọn màn từ danh sách LEVELS, thêm level mới vào LEVELS là tự có nút
+// ===== MENU CHON LEVEL =====
+// tạo nút cho từng level trong LEVELS
 function initLevelMenu() {
-    const fragment = document.createDocumentFragment();
+    dom.levelList.innerHTML = '';
     for (let i = 0; i < LEVELS.length; i++) {
         const levelNumber = i + 1;
 
@@ -763,39 +756,37 @@ function initLevelMenu() {
         title.className = 'level-option-title';
         title.textContent = LEVELS[i].name;
 
-        const description = document.createElement('span');
-        description.className = 'level-option-desc';
-        description.textContent = LEVELS[i].description;
+        const desc = document.createElement('span');
+        desc.className = 'level-option-desc';
+        desc.textContent = LEVELS[i].description;
 
         button.appendChild(title);
-        button.appendChild(description);
+        button.appendChild(desc);
         button.addEventListener('click', function () {
-            // Phòng thủ thêm: nút đã disabled nhưng vẫn kiểm tra lại, phòng trường hợp
-            // ai đó bỏ thuộc tính disabled bằng DevTools
             if (!isLevelUnlocked(levelNumber)) {
                 return;
             }
             startGame(levelNumber);
             render();
         });
-        fragment.appendChild(button);
+        dom.levelList.appendChild(button);
     }
-    dom.levelList.replaceChildren(fragment);
 }
 
-// Nút "Chơi lại" trong popup Game Over: chơi lại đúng màn đã chọn
+// nút chơi lại
 dom.restartButton.addEventListener('click', function () {
     startGame(game.startLevel);
     render();
 });
 
-// Nút "Chọn màn" trong popup Game Over: quay về màn hình chọn màn
+// nút chọn màn
 dom.menuButton.addEventListener('click', function () {
     openLevelMenu();
     render();
 });
 
-unlockedLevel = loadUnlockedLevel(); // Đọc sau khi đã có LEVELS để kiểm tra giá trị hợp lệ
+// ===== CHAY GAME =====
+unlockedLevel = loadUnlockedLevel();
 initRenderer();
 initLevelMenu();
 render();

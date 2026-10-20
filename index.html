@@ -16,7 +16,7 @@
             --rows: 20;
             --cell-size: 30px;
 
-            /* Màu theo id khối, khớp với giá trị trong PIECES ở gamemode.js */
+            /* màu các khối */
             --c1: #FF8E0D; /* I */
             --c2: #0DFF72; /* L */
             --c3: #F538FF; /* J */
@@ -24,8 +24,8 @@
             --c5: #3877FF; /* Z */
             --c6: #FFE138; /* S */
             --c7: #FF0D72; /* T */
-            --c8: #6B6B80; /* Hàng rác ở Level 2 */
-            --c9: #FF3B30; /* Khối nổ ở Level 3 */
+            --c8: #6B6B80; /* hàng rác */
+            --c9: #FF3B30; /* bom */
 
             --panel-bg: #1a1a24;
             --panel-border: #33334d;
@@ -56,14 +56,14 @@
             text-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
         }
 
-        /* ===== Bố cục: bàn chơi bên trái, bảng thông tin bên phải ===== */
+        /* bố cục */
         .play-area {
             display: flex;
             align-items: flex-start;
             gap: 16px;
         }
 
-        /* Khung định vị cho thông báo Level Up nằm đè lên bàn chơi */
+        /* để banner nằm đè lên bàn chơi */
         .board-wrapper {
             position: relative;
         }
@@ -106,7 +106,7 @@
             color: #00f0ff;
         }
 
-        /* Lưới 4x4 xem trước khối kế tiếp, dùng chung kích thước ô với bàn chơi */
+        /* ô khối tiếp theo 4x4 */
         .next-grid {
             display: grid;
             grid-template-columns: repeat(4, var(--cell-size));
@@ -114,7 +114,7 @@
             margin-top: 4px;
         }
 
-        /* ===== Bàn chơi ===== */
+        /* bàn chơi */
         .board {
             display: grid;
             grid-template-columns: repeat(var(--cols), var(--cell-size));
@@ -143,13 +143,13 @@
         .cell[data-v="7"] { background-color: var(--c7); }
         .cell[data-v="8"] { background-color: var(--c8); }
 
-        /* Khối nổ: lõi vàng, viền đỏ, phát sáng để dễ phân biệt với khối thường */
+        /* bom */
         .cell[data-v="9"] {
             background: radial-gradient(circle, #FFE138 0%, var(--c9) 55%, #8B0000 100%);
             box-shadow: inset 0 0 0 1px #000, 0 0 8px rgba(255, 59, 48, 0.8);
         }
 
-        /* ===== Thông báo Level Up ===== */
+        /* thông báo level up */
         .level-banner {
             position: absolute;
             left: 50%;
@@ -165,7 +165,7 @@
             letter-spacing: 3px;
             text-shadow: 0 0 10px rgba(0, 240, 255, 0.6);
             white-space: nowrap;
-            pointer-events: none; /* Không chặn thao tác lên bàn chơi */
+            pointer-events: none;
             opacity: 0;
             transition: opacity 0.3s ease, transform 0.3s ease;
         }
@@ -175,8 +175,7 @@
             transform: translate(-50%, -50%) scale(1);
         }
 
-        /* ===== Popup Game Over ===== */
-        /* Phủ toàn màn hình, nền tối mờ để làm nổi hộp thoại và chặn click xuống game */
+        /* popup */
         .overlay {
             position: fixed;
             inset: 0;
@@ -187,7 +186,7 @@
             z-index: 10;
         }
 
-        /* display: flex ở trên sẽ đè thuộc tính hidden, nên phải ẩn lại tường minh */
+        /* display flex đè lên hidden nên phải thêm cái này */
         .overlay[hidden] {
             display: none;
         }
@@ -249,26 +248,23 @@
             transform: scale(0.96);
         }
 
-        /* Viền focus rõ ràng khi dùng bàn phím (Tab/Enter) */
         .button:focus-visible {
             outline: 2px solid #ffffff;
             outline-offset: 3px;
         }
 
-        /* Hai nút nằm cạnh nhau trong popup Game Over */
         .dialog-actions {
             display: flex;
             gap: 12px;
         }
 
-        /* Nút phụ: nền trong suốt, viền xanh */
         .button--secondary {
             color: #00f0ff;
             background: transparent;
             border: 1px solid #00f0ff;
         }
 
-        /* ===== Màn hình chọn màn ===== */
+        /* màn chọn level */
         .level-list {
             display: flex;
             flex-direction: column;
@@ -300,7 +296,7 @@
             outline: none;
         }
 
-        /* Level chưa mở khóa: mờ đi, không có hiệu ứng hover */
+        /* level bị khóa */
         .level-option:disabled {
             opacity: 0.45;
             cursor: not-allowed;
@@ -339,7 +335,7 @@
     <div class="play-area">
         <div class="board-wrapper">
             <div id="board" class="board" aria-label="Bàn chơi Tetris"></div>
-            <!-- Thông báo "Level Up", JS bật/tắt class is-visible -->
+            <!-- thông báo level up -->
             <div id="level-banner" class="level-banner" role="status" aria-live="polite"></div>
         </div>
 
@@ -377,7 +373,6 @@
     </div>
 </div>
 
-<!-- Màn hình chọn màn: các nút level được JS tạo từ danh sách LEVELS -->
 <div id="level-menu" class="overlay" role="dialog" aria-modal="true" aria-labelledby="level-menu-title" hidden>
     <div class="dialog">
         <h2 id="level-menu-title" class="dialog-title dialog-title--menu">CHỌN MÀN</h2>
