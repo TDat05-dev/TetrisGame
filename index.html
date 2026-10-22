@@ -16,16 +16,15 @@
             --rows: 20;
             --cell-size: 30px;
 
-            /* màu các khối */
-            --c1: #FF8E0D; /* I */
-            --c2: #0DFF72; /* L */
-            --c3: #F538FF; /* J */
-            --c4: #0DC2FF; /* O */
-            --c5: #3877FF; /* Z */
-            --c6: #FFE138; /* S */
-            --c7: #FF0D72; /* T */
-            --c8: #6B6B80; /* hàng rác */
-            --c9: #FF3B30; /* bom */
+            --c1: #FF8E0D;
+            --c2: #0DFF72;
+            --c3: #F538FF;
+            --c4: #0DC2FF;
+            --c5: #3877FF;
+            --c6: #FFE138;
+            --c7: #FF0D72;
+            --c8: #6B6B80;
+            --c9: #FF3B30;
 
             --panel-bg: #1a1a24;
             --panel-border: #33334d;
@@ -56,14 +55,12 @@
             text-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
         }
 
-        /* bố cục */
         .play-area {
             display: flex;
             align-items: flex-start;
             gap: 16px;
         }
 
-        /* để banner nằm đè lên bàn chơi */
         .board-wrapper {
             position: relative;
         }
@@ -86,6 +83,10 @@
             border-radius: 8px;
         }
 
+        .stat[hidden] {
+            display: none;
+        }
+
         .stat-label {
             font-size: 0.8rem;
             font-weight: bold;
@@ -106,7 +107,6 @@
             color: #00f0ff;
         }
 
-        /* ô khối tiếp theo 4x4 */
         .next-grid {
             display: grid;
             grid-template-columns: repeat(4, var(--cell-size));
@@ -114,7 +114,6 @@
             margin-top: 4px;
         }
 
-        /* bàn chơi */
         .board {
             display: grid;
             grid-template-columns: repeat(var(--cols), var(--cell-size));
@@ -143,13 +142,11 @@
         .cell[data-v="7"] { background-color: var(--c7); }
         .cell[data-v="8"] { background-color: var(--c8); }
 
-        /* bom */
         .cell[data-v="9"] {
             background: radial-gradient(circle, #FFE138 0%, var(--c9) 55%, #8B0000 100%);
             box-shadow: inset 0 0 0 1px #000, 0 0 8px rgba(255, 59, 48, 0.8);
         }
 
-        /* thông báo level up */
         .level-banner {
             position: absolute;
             left: 50%;
@@ -175,7 +172,6 @@
             transform: translate(-50%, -50%) scale(1);
         }
 
-        /* popup */
         .overlay {
             position: fixed;
             inset: 0;
@@ -186,7 +182,6 @@
             z-index: 10;
         }
 
-        /* display flex đè lên hidden nên phải thêm cái này */
         .overlay[hidden] {
             display: none;
         }
@@ -264,7 +259,6 @@
             border: 1px solid #00f0ff;
         }
 
-        /* màn chọn level */
         .level-list {
             display: flex;
             flex-direction: column;
@@ -296,7 +290,6 @@
             outline: none;
         }
 
-        /* level bị khóa */
         .level-option:disabled {
             opacity: 0.45;
             cursor: not-allowed;
@@ -319,6 +312,68 @@
             color: var(--text-muted);
         }
 
+        .energy-bar {
+            width: 100%;
+            height: 12px;
+            margin-top: 4px;
+            background: #000000;
+            border: 1px solid var(--panel-border);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .energy-fill {
+            width: 0;
+            height: 100%;
+            background: linear-gradient(90deg, #00f0ff, #ff007f);
+            transition: width 0.3s ease;
+        }
+
+        .energy-text {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .skill-button {
+            width: 100%;
+            margin-top: 4px;
+            padding: 8px;
+            font-family: inherit;
+            font-weight: bold;
+            color: #121214;
+            background: #00f0ff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .skill-button:hover {
+            box-shadow: 0 0 10px rgba(0, 240, 255, 0.6);
+        }
+
+        .skill-button:disabled {
+            color: var(--text-muted);
+            background: #2a2a38;
+            box-shadow: none;
+            cursor: not-allowed;
+        }
+
+        .skill-hint {
+            max-width: 140px;
+            font-size: 0.75rem;
+            text-align: center;
+            color: #ffe138;
+        }
+
+        .board.is-aiming {
+            cursor: crosshair;
+        }
+
+        .cell.target {
+            box-shadow: inset 0 0 0 2px #ffffff;
+            background-color: rgba(255, 255, 255, 0.25);
+        }
+
         .controls-hint {
             text-align: center;
             font-size: 0.85rem;
@@ -331,11 +386,9 @@
 <div class="game-container">
     <h1>TETRIS</h1>
 
-
     <div class="play-area">
         <div class="board-wrapper">
             <div id="board" class="board" aria-label="Bàn chơi Tetris"></div>
-            <!-- thông báo level up -->
             <div id="level-banner" class="level-banner" role="status" aria-live="polite"></div>
         </div>
 
@@ -352,6 +405,19 @@
                 <span class="stat-label">LEVEL</span>
                 <span id="level" class="stat-value stat-value--level">1</span>
             </div>
+            <div id="energy-box" class="stat" hidden>
+                <span class="stat-label">NĂNG LƯỢNG</span>
+                <div class="energy-bar">
+                    <div id="energy-fill" class="energy-fill"></div>
+                </div>
+                <span id="energy-text" class="energy-text">0 / 100</span>
+            </div>
+            <div id="skill-box" class="stat" hidden>
+                <span class="stat-label">KỸ NĂNG</span>
+                <button id="skill-row" class="skill-button" type="button" onclick="useSkill('row')">Phá 1 hàng</button>
+                <button id="skill-area" class="skill-button" type="button" onclick="useSkill('area')">Nổ 2x2</button>
+                <span id="skill-hint" class="skill-hint"></span>
+            </div>
         </aside>
     </div>
 
@@ -359,6 +425,7 @@
         <p>A D : Di chuyển sang trái/phải</p>
         <p>Space : Xoay khối hình</p>
         <p>S : Thả rơi nhanh</p>
+        <p>Ctrl + Enter : Qua màn</p>
     </div>
 </div>
 
@@ -367,8 +434,8 @@
         <h2 id="game-over-title" class="dialog-title">GAME OVER</h2>
         <p class="dialog-text">Điểm của bạn: <span id="final-score" class="dialog-score">0</span></p>
         <div class="dialog-actions">
-            <button id="restart-button" class="button" type="button">Chơi lại</button>
-            <button id="menu-button" class="button button--secondary" type="button">Chọn màn</button>
+            <button id="restart-button" class="button" type="button" onclick="startGame()">Chơi lại</button>
+            <button id="menu-button" class="button button--secondary" type="button" onclick="showMenu()">Chọn màn</button>
         </div>
     </div>
 </div>
@@ -376,7 +443,24 @@
 <div id="level-menu" class="overlay" role="dialog" aria-modal="true" aria-labelledby="level-menu-title" hidden>
     <div class="dialog">
         <h2 id="level-menu-title" class="dialog-title dialog-title--menu">CHỌN MÀN</h2>
-        <div id="level-list" class="level-list"></div>
+        <div class="level-list">
+            <button id="level-1-button" class="level-option" type="button" onclick="chooseLevel(1)">
+                <span class="level-option-title">Level 1</span>
+                <span id="level-1-desc" class="level-option-desc">Chơi cơ bản</span>
+            </button>
+            <button id="level-2-button" class="level-option" type="button" onclick="chooseLevel(2)">
+                <span class="level-option-title">Level 2</span>
+                <span id="level-2-desc" class="level-option-desc"></span>
+            </button>
+            <button id="level-3-button" class="level-option" type="button" onclick="chooseLevel(3)">
+                <span class="level-option-title">Level 3</span>
+                <span id="level-3-desc" class="level-option-desc"></span>
+            </button>
+            <button id="level-4-button" class="level-option" type="button" onclick="chooseLevel(4)">
+                <span class="level-option-title">Level 4</span>
+                <span id="level-4-desc" class="level-option-desc"></span>
+            </button>
+        </div>
     </div>
 </div>
 

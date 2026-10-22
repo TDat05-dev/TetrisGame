@@ -1,793 +1,844 @@
-'use strict';
-
-// ===== CAU HINH =====
 const COLS = 10;
 const ROWS = 20;
-const DROP_INTERVAL_MS = 1000; // 1 giây rơi 1 ô
+const PREVIEW_SIZE = 4;
 
-// điểm khi phá 0, 1, 2, 3, 4 hàng cùng lúc
-const LINE_CLEAR_SCORES = [0, 10, 30, 50, 100];
+const EMPTY = 0;
+const GARBAGE = 8;
+const BOMB = 'BOMB';
 
-// level 2
-const LEVEL_2_SCORE = 100;
-const GARBAGE_PIECE_LIMIT = 5; // đặt 5 khối không phá được hàng nào thì thêm hàng rác
-const GARBAGE_BLOCK = 8;       // màu ô rác
-const BANNER_DURATION_MS = 2000;
-
-// level 3
-const LEVEL_3_SCORE = 250;
-const BOMB_PIECE_LIMIT = 6;    // đặt 6 khối không phá được hàng nào thì cho khối bom
-const BOMB_TYPE = 'BOMB';
-
-// các khối, số là màu của khối (--c1 đến --c9 trong css)
-const PIECES = {
+const SHAPES = {
     I: [
         [0, 1, 0, 0],
         [0, 1, 0, 0],
         [0, 1, 0, 0],
-        [0, 1, 0, 0],
+        [0, 1, 0, 0]
     ],
     L: [
         [0, 2, 0],
         [0, 2, 0],
-        [0, 2, 2],
+        [0, 2, 2]
     ],
     J: [
         [0, 3, 0],
         [0, 3, 0],
-        [3, 3, 0],
+        [3, 3, 0]
     ],
     O: [
         [4, 4],
-        [4, 4],
+        [4, 4]
     ],
     Z: [
         [5, 5, 0],
         [0, 5, 5],
-        [0, 0, 0],
+        [0, 0, 0]
     ],
     S: [
         [0, 6, 6],
         [6, 6, 0],
-        [0, 0, 0],
+        [0, 0, 0]
     ],
     T: [
         [0, 7, 0],
         [7, 7, 7],
-        [0, 0, 0],
+        [0, 0, 0]
     ],
-    // khối bom của level 3
     BOMB: [
         [9, 9],
-        [9, 9],
-    ],
+        [9, 9]
+    ]
 };
 
-// các khối được random (không có bom)
-const PIECE_TYPES = ['I', 'L', 'J', 'O', 'Z', 'S', 'T'];
-const PREVIEW_SIZE = 4;
+const NORMAL_PIECES = ['I', 'L', 'J', 'O', 'Z', 'S', 'T'];
 
-// ===== HAM PHU =====
+const SCORE_FOR_1_LINE = 10;
+const SCORE_FOR_2_LINES = 30;
+const SCORE_FOR_3_LINES = 50;
+const SCORE_FOR_4_LINES = 100;
 
-// random số từ 0 đến max - 1
-function randomInt(max) {
-    return Math.floor(Math.random() * max);
-}
+const SCORE_TO_REACH_LEVEL_2 = 100;
+const SCORE_TO_REACH_LEVEL_3 = 250;
+const SCORE_TO_REACH_LEVEL_4 = 400;
+const LAST_LEVEL = 4;
 
-// tạo ma trận toàn số 0
-function createMatrix(width, height) {
-    const matrix = [];
-    for (let y = 0; y < height; y++) {
-        const row = [];
-        for (let x = 0; x < width; x++) {
-            row.push(0);
-        }
-        matrix.push(row);
+const PIECES_BEFORE_GARBAGE = 5;
+const PIECES_BEFORE_BOMB = 6;
+
+const ENERGY_PER_LINE = 25;
+const MAX_ENERGY = 100;
+const BREAK_ROW_COOLDOWN = 20;
+const EXPLODE_AREA_COOLDOWN = 30;
+
+const SAVE_KEY = 'tetris.unlockedLevel';
+
+
+let board = [];
+
+let pieceType = '';
+let pieceShape = [];
+let pieceX = 0;
+let pieceY = 0;
+let nextPieceType = '';
+
+let gameState = 'menu';
+
+let score = 0;
+let level = 1;
+let startLevel = 1;
+let unlockedLevel = 1;
+
+let piecesWithoutClear = 0;
+let bombIsNext = false;
+
+let energy = 0;
+let breakRowCooldown = 0;
+let explodeAreaCooldown = 0;
+let selectedSkill = '';
+let hoveredX = -1;
+let hoveredY = -1;
+
+let boardCells = [];
+let nextCells = [];
+
+
+// ===== BAN CHOI =====
+
+function createEmptyRow() {
+    let row = [];
+    for (let x = 0; x < COLS; x++) {
+        row.push(EMPTY);
     }
-    return matrix;
+    return row;
 }
 
-// copy khối từ PIECES ra để không bị sửa vào khối gốc
-function createPiece(type) {
-    const piece = PIECES[type];
-    const copy = [];
-    for (let y = 0; y < piece.length; y++) {
-        copy.push(piece[y].slice());
+function createEmptyBoard() {
+    board = [];
+    for (let y = 0; y < ROWS; y++) {
+        board.push(createEmptyRow());
+    }
+}
+
+function isRowFull(y) {
+    for (let x = 0; x < COLS; x++) {
+        if (board[y][x] === EMPTY) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function isRowEmpty(y) {
+    for (let x = 0; x < COLS; x++) {
+        if (board[y][x] !== EMPTY) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function removeRow(y) {
+    board.splice(y, 1);
+    board.unshift(createEmptyRow());
+}
+
+function removeFullRows() {
+    let removedCount = 0;
+    let y = ROWS - 1;
+
+    while (y >= 0) {
+        if (isRowFull(y)) {
+            removeRow(y);
+            removedCount = removedCount + 1;
+        } else {
+            y = y - 1;
+        }
+    }
+
+    return removedCount;
+}
+
+function getAreaLeft(x) {
+    if (x > COLS - 2) {
+        return COLS - 2;
+    }
+    return x;
+}
+
+function getAreaTop(y) {
+    if (y > ROWS - 2) {
+        return ROWS - 2;
+    }
+    return y;
+}
+
+function clearArea2x2(x, y) {
+    let left = getAreaLeft(x);
+    let top = getAreaTop(y);
+
+    board[top][left] = EMPTY;
+    board[top][left + 1] = EMPTY;
+    board[top + 1][left] = EMPTY;
+    board[top + 1][left + 1] = EMPTY;
+}
+
+function addGarbageRow() {
+    if (isRowEmpty(0) === false) {
+        return false;
+    }
+
+    let garbageRow = [];
+    let holeX = Math.floor(Math.random() * COLS);
+    for (let x = 0; x < COLS; x++) {
+        if (x === holeX) {
+            garbageRow.push(EMPTY);
+        } else {
+            garbageRow.push(GARBAGE);
+        }
+    }
+
+    board.shift();
+    board.push(garbageRow);
+    return true;
+}
+
+
+// ===== KHOI DANG ROI =====
+
+function getRandomPieceType() {
+    let index = Math.floor(Math.random() * NORMAL_PIECES.length);
+    return NORMAL_PIECES[index];
+}
+
+function copyShape(type) {
+    let original = SHAPES[type];
+    let copy = [];
+    for (let y = 0; y < original.length; y++) {
+        let row = [];
+        for (let x = 0; x < original[y].length; x++) {
+            row.push(original[y][x]);
+        }
+        copy.push(row);
     }
     return copy;
 }
 
-function randomPieceType() {
-    return PIECE_TYPES[randomInt(PIECE_TYPES.length)];
-}
-
-// ===== DU LIEU GAME =====
-const arena = createMatrix(COLS, ROWS); // bàn chơi
-
-// khối đang rơi
-const player = {
-    pos: { x: 0, y: 0 },
-    matrix: null,
-    type: null, // tên khối, dùng để biết có phải bom không
-};
-
-let nextPieceType = null; // khối tiếp theo
-
-const game = {
-    score: 0,
-    level: 1,
-    isOver: false,
-    isInMenu: true,           // đang ở màn chọn level
-    startLevel: 1,            // level đã chọn, để bấm chơi lại
-    pendingSpecialPiece: null // khối đặc biệt (bom) sẽ làm khối tiếp theo
-};
-
-function resetState() {
-    for (let y = 0; y < ROWS; y++) {
-        arena[y].fill(0);
-    }
-    player.pos.x = 0;
-    player.pos.y = 0;
-    player.matrix = null;
-    player.type = null;
-    nextPieceType = null;
-    game.score = 0;
-    game.level = 1;
-    game.isOver = false;
-    game.pendingSpecialPiece = null;
-    // không reset startLevel vì nút chơi lại cần dùng
-}
-
-// ===== MO KHOA LEVEL =====
-// lưu level cao nhất đã chơi tới vào localStorage
-const UNLOCKED_LEVEL_STORAGE_KEY = 'tetris.unlockedLevel';
-let unlockedLevel = 1;
-
-function loadUnlockedLevel() {
-    let level = 1;
-    try {
-        level = Number(localStorage.getItem(UNLOCKED_LEVEL_STORAGE_KEY));
-    } catch (e) {
-        return 1;
-    }
-    // nếu giá trị bị sai thì cho về level 1
-    if (!Number.isInteger(level) || level < 1 || level > LEVELS.length) {
-        return 1;
-    }
-    return level;
-}
-
-function unlockLevel(level) {
-    if (level <= unlockedLevel) {
-        return;
-    }
-    unlockedLevel = level;
-    try {
-        localStorage.setItem(UNLOCKED_LEVEL_STORAGE_KEY, level);
-    } catch (e) {
-        // không lưu được thì thôi
-    }
-}
-
-function isLevelUnlocked(level) {
-    return level <= unlockedLevel;
-}
-
-// ===== VE GIAO DIEN =====
-const dom = {
-    board: document.getElementById('board'),
-    score: document.getElementById('score'),
-    level: document.getElementById('level'),
-    next: document.getElementById('next'),
-    gameOver: document.getElementById('game-over'),
-    finalScore: document.getElementById('final-score'),
-    restartButton: document.getElementById('restart-button'),
-    banner: document.getElementById('level-banner'),
-    levelMenu: document.getElementById('level-menu'),
-    levelList: document.getElementById('level-list'),
-    menuButton: document.getElementById('menu-button'),
-};
-
-const boardCells = [];
-const previewCells = [];
-
-// frame là hình sắp vẽ, prevFrame là hình đang hiện trên màn hình
-const frame = [];
-const prevFrame = [];
-for (let i = 0; i < COLS * ROWS; i++) {
-    frame.push(0);
-    prevFrame.push(0);
-}
-
-// lưu lại giá trị đã vẽ, cái nào không đổi thì không vẽ lại
-const rendered = {
-    score: null,
-    level: null,
-    nextType: null,
-    isOver: null,
-    isInMenu: null,
-};
-
-// tạo các ô div cho bàn chơi và ô khối tiếp theo
-function initRenderer() {
-    dom.board.innerHTML = '';
-    boardCells.length = 0;
-    for (let i = 0; i < COLS * ROWS; i++) {
-        const cell = document.createElement('div');
-        cell.className = 'cell';
-        cell.dataset.v = 0;
-        dom.board.appendChild(cell);
-        boardCells.push(cell);
-    }
-
-    dom.next.innerHTML = '';
-    previewCells.length = 0;
-    for (let i = 0; i < PREVIEW_SIZE * PREVIEW_SIZE; i++) {
-        const cell = document.createElement('div');
-        cell.className = 'cell';
-        cell.dataset.v = 0;
-        dom.next.appendChild(cell);
-        previewCells.push(cell);
-    }
-
-    prevFrame.fill(0);
-    rendered.score = null;
-    rendered.level = null;
-    rendered.nextType = null;
-    rendered.isOver = null;
-    rendered.isInMenu = null;
-}
-
-function renderBoard() {
-    // chép bàn chơi vào frame
-    for (let y = 0; y < ROWS; y++) {
-        for (let x = 0; x < COLS; x++) {
-            frame[y * COLS + x] = arena[y][x];
-        }
-    }
-
-    // vẽ thêm khối đang rơi
-    if (player.matrix !== null) {
-        for (let y = 0; y < player.matrix.length; y++) {
-            for (let x = 0; x < player.matrix[y].length; x++) {
-                const value = player.matrix[y][x];
-                const ax = x + player.pos.x;
-                const ay = y + player.pos.y;
-                if (value !== 0 && ax >= 0 && ax < COLS && ay >= 0 && ay < ROWS) {
-                    frame[ay * COLS + ax] = value;
-                }
-            }
-        }
-    }
-
-    // chỉ sửa những ô bị thay đổi
-    for (let i = 0; i < frame.length; i++) {
-        if (frame[i] !== prevFrame[i]) {
-            boardCells[i].dataset.v = frame[i];
-            prevFrame[i] = frame[i];
-        }
-    }
-}
-
-// vẽ khối tiếp theo vào ô 4x4
-function renderNextPreview() {
-    if (nextPieceType === rendered.nextType) {
-        return;
-    }
-    rendered.nextType = nextPieceType;
-
-    for (let i = 0; i < previewCells.length; i++) {
-        previewCells[i].dataset.v = 0;
-    }
-    if (nextPieceType === null) {
-        return;
-    }
-
-    const matrix = PIECES[nextPieceType];
-
-    // tìm phần có màu của khối để canh giữa
-    let minX = matrix.length;
-    let maxX = -1;
-    let minY = matrix.length;
-    let maxY = -1;
-    for (let y = 0; y < matrix.length; y++) {
-        for (let x = 0; x < matrix[y].length; x++) {
-            if (matrix[y][x] !== 0) {
-                if (x < minX) minX = x;
-                if (x > maxX) maxX = x;
-                if (y < minY) minY = y;
-                if (y > maxY) maxY = y;
-            }
-        }
-    }
-
-    const width = maxX - minX + 1;
-    const height = maxY - minY + 1;
-    const offsetX = Math.floor((PREVIEW_SIZE - width) / 2) - minX;
-    const offsetY = Math.floor((PREVIEW_SIZE - height) / 2) - minY;
-
-    for (let y = 0; y < matrix.length; y++) {
-        for (let x = 0; x < matrix[y].length; x++) {
-            if (matrix[y][x] !== 0) {
-                const index = (y + offsetY) * PREVIEW_SIZE + (x + offsetX);
-                previewCells[index].dataset.v = matrix[y][x];
-            }
-        }
-    }
-}
-
-// cập nhật điểm và level
-function renderHud() {
-    if (game.score !== rendered.score) {
-        dom.score.textContent = game.score;
-        rendered.score = game.score;
-    }
-    if (game.level !== rendered.level) {
-        dom.level.textContent = game.level;
-        rendered.level = game.level;
-    }
-}
-
-// hiện / ẩn popup game over
-function renderGameOver() {
-    if (game.isOver === rendered.isOver) {
-        return;
-    }
-    rendered.isOver = game.isOver;
-
-    dom.gameOver.hidden = !game.isOver;
-    if (game.isOver) {
-        dom.finalScore.textContent = game.score;
-        dom.restartButton.focus();
-    }
-}
-
-// hiện thông báo rồi 2 giây sau tắt
-function showBanner(message) {
-    dom.banner.textContent = message;
-    dom.banner.classList.add('is-visible');
-
-    setTimeout(function () {
-        dom.banner.classList.remove('is-visible');
-    }, BANNER_DURATION_MS);
-}
-
-// hiện / ẩn màn chọn level
-function renderLevelMenu() {
-    if (game.isInMenu === rendered.isInMenu) {
-        return;
-    }
-    rendered.isInMenu = game.isInMenu;
-
-    dom.levelMenu.hidden = !game.isInMenu;
-    if (game.isInMenu) {
-        updateLevelLocks();
-        const buttons = dom.levelList.querySelectorAll('button');
-        buttons[game.startLevel - 1].focus();
-    }
-}
-
-// khóa các level chưa chơi tới
-function updateLevelLocks() {
-    const buttons = dom.levelList.querySelectorAll('button');
-    for (let i = 0; i < buttons.length; i++) {
-        const levelNumber = i + 1;
-        const desc = buttons[i].querySelector('.level-option-desc');
-
-        if (isLevelUnlocked(levelNumber)) {
-            buttons[i].disabled = false;
-            desc.textContent = LEVELS[i].description;
-        } else {
-            buttons[i].disabled = true;
-            desc.textContent = 'Đã khóa: hãy đạt Level ' + levelNumber + ' khi chơi để mở';
-        }
-    }
-}
-
-function render() {
-    renderBoard();
-    renderNextPreview();
-    renderHud();
-    renderGameOver();
-    renderLevelMenu();
-}
-
-// ===== XU LY KHOI =====
-
-// kiểm tra khối có đụng tường, đáy hoặc khối khác không
-function collide(arena, player) {
-    const matrix = player.matrix;
-    const pos = player.pos;
-    for (let y = 0; y < matrix.length; y++) {
-        for (let x = 0; x < matrix[y].length; x++) {
-            if (matrix[y][x] === 0) {
+function canPlace(shape, newX, newY) {
+    for (let y = 0; y < shape.length; y++) {
+        for (let x = 0; x < shape[y].length; x++) {
+            if (shape[y][x] === EMPTY) {
                 continue;
             }
-            const ax = x + pos.x;
-            const ay = y + pos.y;
-            if (ax < 0 || ax >= COLS || ay >= ROWS) {
-                return true; // ra ngoài tường hoặc dưới đáy
+
+            let boardX = newX + x;
+            let boardY = newY + y;
+
+            if (boardX < 0 || boardX >= COLS) {
+                return false;
             }
-            if (ay < 0) {
-                continue; // còn ở trên bàn chơi thì bỏ qua
+            if (boardY >= ROWS) {
+                return false;
             }
-            if (arena[ay][ax] !== 0) {
-                return true; // đụng khối khác
+            if (boardY >= 0 && board[boardY][boardX] !== EMPTY) {
+                return false;
             }
         }
     }
-    return false;
+    return true;
 }
 
-// ghi khối vào bàn chơi khi chạm đáy
-function merge(arena, player) {
-    for (let y = 0; y < player.matrix.length; y++) {
-        for (let x = 0; x < player.matrix[y].length; x++) {
-            const value = player.matrix[y][x];
-            const ay = y + player.pos.y;
-            if (value !== 0 && ay >= 0) {
-                arena[ay][x + player.pos.x] = value;
-            }
-        }
+function spawnNextPiece() {
+    if (nextPieceType === '') {
+        nextPieceType = getRandomPieceType();
     }
-}
 
-// tạo khối mới ở giữa phía trên, trả về false nếu không còn chỗ (thua)
-function spawnPiece() {
-    if (nextPieceType === null) {
-        nextPieceType = randomPieceType();
-    }
-    const currentType = nextPieceType;
+    pieceType = nextPieceType;
+    pieceShape = copyShape(pieceType);
+    pieceX = Math.floor(COLS / 2) - Math.floor(pieceShape.length / 2);
+    pieceY = 0;
 
-    // nếu có bom đang chờ thì cho bom làm khối tiếp theo
-    if (game.pendingSpecialPiece !== null) {
-        nextPieceType = game.pendingSpecialPiece;
-        game.pendingSpecialPiece = null;
+    if (bombIsNext) {
+        nextPieceType = BOMB;
+        bombIsNext = false;
     } else {
-        nextPieceType = randomPieceType();
+        nextPieceType = getRandomPieceType();
     }
 
-    player.type = currentType;
-    player.matrix = createPiece(currentType);
-    player.pos.y = 0;
-    player.pos.x = Math.floor(COLS / 2) - Math.floor(player.matrix[0].length / 2);
-    return !collide(arena, player);
-}
-
-// bắt đầu chơi ở level đã chọn
-function startGame(startLevel) {
-    resetState();
-    game.startLevel = startLevel;
-    game.level = startLevel;
-    game.isInMenu = false;
-    LEVELS[startLevel - 1].onEnter();
-
-    spawnPiece();
-    dropCounter = 0;
-    if (startLevel > 1) {
-        showBanner('Level ' + startLevel);
+    if (canPlace(pieceShape, pieceX, pieceY) === false) {
+        gameOver();
     }
 }
 
-// quay lại màn chọn level
-function openLevelMenu() {
-    resetState();
-    game.isInMenu = true;
-}
-
-// kiểm tra hàng đã đầy chưa
-function isRowFull(row) {
-    for (let x = 0; x < row.length; x++) {
-        if (row[x] === 0) {
-            return false;
-        }
-    }
-    return true;
-}
-
-// xóa các hàng đầy, trả về số hàng đã xóa
-function clearFullRows() {
-    let clearedCount = 0;
-    let y = ROWS - 1;
-
-    while (y >= 0) {
-        if (isRowFull(arena[y])) {
-            const removedRow = arena.splice(y, 1)[0]; // cắt hàng đầy ra
-            removedRow.fill(0);                       // làm trống hàng đó
-            arena.unshift(removedRow);                // đưa lên trên cùng
-            clearedCount++;
-            // không giảm y vì hàng phía trên vừa rớt xuống vị trí y
-        } else {
-            y--;
-        }
-    }
-    return clearedCount;
-}
-
-// ===== CAC LEVEL =====
-// mỗi level có: minScore (điểm để lên level), onEnter (chạy khi vào level),
-// onPiecePlaced (chạy mỗi lần đặt khối, trả về false nếu thua)
-
-// level 1: chơi bình thường
-const level1 = {
-    name: 'Level 1',
-    description: 'Chơi cơ bản',
-    minScore: 0,
-
-    onEnter: function () {
-    },
-
-    onPiecePlaced: function (clearedCount) {
-        return true;
-    },
-};
-
-// level 2: đặt 5 khối mà không phá được hàng nào thì thêm 1 hàng rác
-const level2 = {
-    name: 'Level 2',
-    description: 'Cứ ' + GARBAGE_PIECE_LIMIT + ' khối không phá hàng thì trồi 1 hàng rác',
-    minScore: LEVEL_2_SCORE,
-    quantityOfBlocks: 0, // đếm số khối đã đặt mà chưa phá hàng
-
-    onEnter: function () {
-        level2.quantityOfBlocks = 0;
-    },
-
-    onPiecePlaced: function (clearedCount) {
-        if (clearedCount > 0) {
-            level2.quantityOfBlocks = 0;
-            return true;
-        }
-
-        level2.quantityOfBlocks++;
-        if (level2.quantityOfBlocks >= GARBAGE_PIECE_LIMIT) {
-            level2.quantityOfBlocks = 0;
-            return addGarbageRow();
-        }
-        return true;
-    },
-};
-
-// thêm 1 hàng rác ở dưới cùng, có 1 lỗ random
-// trả về false nếu hàng trên cùng có khối (bị đẩy ra ngoài => thua)
-function addGarbageRow() {
-    // phải kiểm tra trước khi lấy hàng ra, không thì bàn chơi bị thiếu 1 hàng
-    for (let x = 0; x < COLS; x++) {
-        if (arena[0][x] !== 0) {
-            return false;
-        }
-    }
-
-    // lấy hàng trên cùng ra làm hàng rác rồi đưa xuống dưới
-    const row = arena.shift();
-    const hole = randomInt(COLS);
-    for (let x = 0; x < COLS; x++) {
-        if (x === hole) {
-            row[x] = 0;
-        } else {
-            row[x] = GARBAGE_BLOCK;
-        }
-    }
-    arena.push(row);
-    return true;
-}
-
-// level 3: đặt 6 khối mà không phá được hàng nào thì khối tiếp theo là bom
-const level3 = {
-    name: 'Level 3',
-    description: 'Cứ ' + BOMB_PIECE_LIMIT + ' khối không phá hàng thì tặng 1 khối nổ',
-    minScore: LEVEL_3_SCORE,
-    quantityOfBlocks: 0,
-
-    onEnter: function () {
-        level3.quantityOfBlocks = 0;
-    },
-
-    onPiecePlaced: function (clearedCount) {
-        if (clearedCount > 0) {
-            level3.quantityOfBlocks = 0;
-            return true;
-        }
-
-        level3.quantityOfBlocks++;
-        if (level3.quantityOfBlocks >= BOMB_PIECE_LIMIT) {
-            level3.quantityOfBlocks = 0;
-            game.pendingSpecialPiece = BOMB_TYPE;
-        }
-        return true;
-    },
-};
-
-// bom nổ: xóa 2x2 ô ngay dưới bom, bom không được ghi vào bàn chơi
-function explodeBomb() {
-    const size = player.matrix.length;
-    const startY = player.pos.y + size;
-    for (let y = startY; y < startY + size; y++) {
-        for (let x = player.pos.x; x < player.pos.x + size; x++) {
-            if (y >= 0 && y < ROWS && x >= 0 && x < COLS) {
-                arena[y][x] = 0;
+function putPieceOnBoard() {
+    for (let y = 0; y < pieceShape.length; y++) {
+        for (let x = 0; x < pieceShape[y].length; x++) {
+            let boardY = pieceY + y;
+            if (pieceShape[y][x] !== EMPTY && boardY >= 0) {
+                board[boardY][pieceX + x] = pieceShape[y][x];
             }
         }
     }
 }
 
-const LEVELS = [level1, level2, level3];
-
-function getCurrentLevel() {
-    return LEVELS[game.level - 1];
+function explodeBomb() {
+    let rowBelowBomb = pieceY + 2;
+    clearArea2x2(pieceX, rowBelowBomb);
 }
 
-// đủ điểm thì lên level tiếp theo
-function checkLevelUp() {
-    const nextLevel = LEVELS[game.level]; // level hiện tại là game.level - 1 nên level sau là game.level
-    if (nextLevel === undefined) {
-        return; // đang ở level cuối
+function rotateShape(shape) {
+    let size = shape.length;
+    let rotated = [];
+    for (let y = 0; y < size; y++) {
+        let row = [];
+        for (let x = 0; x < size; x++) {
+            row.push(shape[size - 1 - x][y]);
+        }
+        rotated.push(row);
     }
-    if (game.score >= nextLevel.minScore) {
-        game.level++;
-        nextLevel.onEnter();
-        unlockLevel(game.level);
+    return rotated;
+}
+
+function movePieceUpUntilFree() {
+    while (canPlace(pieceShape, pieceX, pieceY) === false) {
+        pieceY = pieceY - 1;
+    }
+}
+
+
+// ===== DIEU KHIEN =====
+
+function moveLeft() {
+    if (canPlace(pieceShape, pieceX - 1, pieceY)) {
+        pieceX = pieceX - 1;
+    }
+}
+
+function moveRight() {
+    if (canPlace(pieceShape, pieceX + 1, pieceY)) {
+        pieceX = pieceX + 1;
+    }
+}
+
+function moveDown() {
+    if (canPlace(pieceShape, pieceX, pieceY + 1)) {
+        pieceY = pieceY + 1;
+    } else {
+        landPiece();
+    }
+}
+
+function rotatePiece() {
+    let rotated = rotateShape(pieceShape);
+    let shiftsToTry = [0, 1, -1, 2, -2];
+
+    for (let i = 0; i < shiftsToTry.length; i++) {
+        let newX = pieceX + shiftsToTry[i];
+        if (canPlace(rotated, newX, pieceY)) {
+            pieceShape = rotated;
+            pieceX = newX;
+            return;
+        }
+    }
+}
+
+
+// ===== KHI KHOI CHAM DAY =====
+
+function landPiece() {
+    if (pieceType === BOMB) {
+        explodeBomb();
+    } else {
+        putPieceOnBoard();
+    }
+
+    let linesRemoved = removeFullRows();
+    addScore(linesRemoved);
+    addEnergy(linesRemoved);
+    levelUpIfEnoughScore();
+
+    if (level === 2) {
+        let stillAlive = applyLevel2Rule(linesRemoved);
+        if (stillAlive === false) {
+            gameOver();
+            return;
+        }
+    }
+    if (level === 3) {
+        applyLevel3Rule(linesRemoved);
+    }
+
+    spawnNextPiece();
+}
+
+function addScore(linesRemoved) {
+    if (linesRemoved === 1) {
+        score = score + SCORE_FOR_1_LINE;
+    } else if (linesRemoved === 2) {
+        score = score + SCORE_FOR_2_LINES;
+    } else if (linesRemoved === 3) {
+        score = score + SCORE_FOR_3_LINES;
+    } else if (linesRemoved === 4) {
+        score = score + SCORE_FOR_4_LINES;
+    }
+}
+
+
+// ===== LEVEL =====
+
+function getScoreToReachLevel(levelNumber) {
+    if (levelNumber === 2) {
+        return SCORE_TO_REACH_LEVEL_2;
+    }
+    if (levelNumber === 3) {
+        return SCORE_TO_REACH_LEVEL_3;
+    }
+    return SCORE_TO_REACH_LEVEL_4;
+}
+
+function getLevelDescription(levelNumber) {
+    if (levelNumber === 1) {
+        return 'Chơi cơ bản';
+    }
+    if (levelNumber === 2) {
+        return 'Cứ ' + PIECES_BEFORE_GARBAGE + ' khối không phá hàng thì trồi 1 hàng rác';
+    }
+    if (levelNumber === 3) {
+        return 'Cứ ' + PIECES_BEFORE_BOMB + ' khối không phá hàng thì tặng 1 khối nổ';
+    }
+    return 'Phá hàng để tích năng lượng, đầy thì dùng kỹ năng';
+}
+
+function levelUpIfEnoughScore() {
+    if (level === LAST_LEVEL) {
+        return;
+    }
+
+    let nextLevel = level + 1;
+    if (score >= getScoreToReachLevel(nextLevel)) {
+        enterLevel(nextLevel);
         showBanner('Level Up');
     }
 }
 
-// cho khối rơi xuống 1 ô, chạm đáy thì xử lý rồi tạo khối mới
-function playerDrop() {
-    player.pos.y++;
-    if (collide(arena, player)) {
-        player.pos.y--;
-
-        if (player.type === BOMB_TYPE) {
-            explodeBomb();
-        } else {
-            merge(arena, player);
-        }
-
-        const clearedCount = clearFullRows();
-        game.score += LINE_CLEAR_SCORES[clearedCount];
-        checkLevelUp();
-
-        // chạy luật của level hiện tại trước rồi mới tạo khối mới
-        if (!getCurrentLevel().onPiecePlaced(clearedCount)) {
-            game.isOver = true;
-        } else if (!spawnPiece()) {
-            game.isOver = true;
-        }
-    }
-    dropCounter = 0;
+function enterLevel(newLevel) {
+    level = newLevel;
+    piecesWithoutClear = 0;
+    bombIsNext = false;
+    energy = 0;
+    breakRowCooldown = 0;
+    explodeAreaCooldown = 0;
+    unlockLevel(newLevel);
 }
 
-// ===== BAN PHIM =====
-window.addEventListener('keydown', function (event) {
-    // đang thua hoặc ở menu thì không điều khiển
-    if (game.isOver || game.isInMenu) {
+function skipToNextLevel() {
+    if (level === LAST_LEVEL) {
+        showBanner('Đã là level cuối');
         return;
     }
-    if (event.code === 'KeyA') {
-        playerMove(-1);
-    } else if (event.code === 'KeyD') {
-        playerMove(1);
-    } else if (event.code === 'KeyS') {
-        playerDrop();
-    } else if (event.code === 'Space') {
-        playerRotate();
+
+    enterLevel(level + 1);
+    showBanner('Level ' + level);
+}
+
+function countPieceWithoutClear(linesRemoved) {
+    if (linesRemoved > 0) {
+        piecesWithoutClear = 0;
     } else {
+        piecesWithoutClear = piecesWithoutClear + 1;
+    }
+}
+
+function applyLevel2Rule(linesRemoved) {
+    countPieceWithoutClear(linesRemoved);
+
+    if (piecesWithoutClear === PIECES_BEFORE_GARBAGE) {
+        piecesWithoutClear = 0;
+        return addGarbageRow();
+    }
+    return true;
+}
+
+function applyLevel3Rule(linesRemoved) {
+    countPieceWithoutClear(linesRemoved);
+
+    if (piecesWithoutClear === PIECES_BEFORE_BOMB) {
+        piecesWithoutClear = 0;
+        bombIsNext = true;
+    }
+}
+
+
+// ===== LUU LEVEL DA MO =====
+
+function loadUnlockedLevel() {
+    let savedLevel = parseInt(localStorage.getItem(SAVE_KEY));
+
+    if (savedLevel >= 1 && savedLevel <= LAST_LEVEL) {
+        unlockedLevel = savedLevel;
+    } else {
+        unlockedLevel = 1;
+    }
+}
+
+function unlockLevel(newLevel) {
+    if (newLevel > unlockedLevel) {
+        unlockedLevel = newLevel;
+        localStorage.setItem(SAVE_KEY, unlockedLevel);
+    }
+}
+
+
+// ===== LEVEL 4: NANG LUONG VA KY NANG =====
+
+function addEnergy(linesRemoved) {
+    if (level !== 4) {
         return;
     }
-    event.preventDefault(); // để space không cuộn trang
-});
 
-// di chuyển trái phải
-function playerMove(dir) {
-    player.pos.x += dir;
-    if (collide(arena, player)) {
-        player.pos.x -= dir;
+    energy = energy + linesRemoved * ENERGY_PER_LINE;
+    if (energy > MAX_ENERGY) {
+        energy = MAX_ENERGY;
     }
 }
 
-// xoay ma trận 90 độ
-function rotateBlock(matrix) {
-    const size = matrix.length;
-    const res = createMatrix(size, size);
-    for (let y = 0; y < size; y++) {
-        for (let x = 0; x < size; x++) {
-            res[y][x] = matrix[size - 1 - x][y];
-        }
+function getCooldown(skill) {
+    if (skill === 'row') {
+        return breakRowCooldown;
     }
-    return res;
+    return explodeAreaCooldown;
 }
 
-// khi xoay bị kẹt thì thử dịch sang trái phải
-const WALL_KICK_OFFSETS = [0, 1, -1, 2, -2];
+function canUseSkill(skill) {
+    if (level !== 4) {
+        return false;
+    }
+    if (gameState !== 'playing') {
+        return false;
+    }
+    if (energy < MAX_ENERGY) {
+        return false;
+    }
+    if (getCooldown(skill) > 0) {
+        return false;
+    }
+    return true;
+}
 
-function playerRotate() {
-    if (player.matrix === null) {
+function useSkill(skill) {
+    if (canUseSkill(skill) === false) {
         return;
     }
-    const oldMatrix = player.matrix;
-    const oldX = player.pos.x;
-    player.matrix = rotateBlock(oldMatrix);
 
-    for (let i = 0; i < WALL_KICK_OFFSETS.length; i++) {
-        player.pos.x = oldX + WALL_KICK_OFFSETS[i];
-        if (!collide(arena, player)) {
-            return;
-        }
+    selectedSkill = skill;
+    gameState = 'choosing-target';
+
+    if (skill === 'row') {
+        document.getElementById('skill-hint').innerText = 'Bấm vào hàng muốn phá (Esc để hủy)';
+    } else {
+        document.getElementById('skill-hint').innerText = 'Bấm vào ô muốn nổ 2x2 (Esc để hủy)';
     }
-    // không xoay được thì trả lại như cũ
-    player.matrix = oldMatrix;
-    player.pos.x = oldX;
+    document.getElementById('board').className = 'board is-aiming';
+    draw();
 }
 
-// ===== GAME LOOP =====
-let dropCounter = 0;
-let lastTime = null;
-
-function update(time) {
-    if (lastTime === null) {
-        lastTime = time;
-    }
-    const deltaTime = time - lastTime;
-    lastTime = time;
-
-    if (!game.isOver && !game.isInMenu) {
-        dropCounter += deltaTime;
-        if (dropCounter >= DROP_INTERVAL_MS) {
-            playerDrop();
-        }
-    }
-
-    render();
-    requestAnimationFrame(update);
+function cancelSkill() {
+    gameState = 'playing';
+    selectedSkill = '';
+    document.getElementById('skill-hint').innerText = '';
+    document.getElementById('board').className = 'board';
+    draw();
 }
 
-// ===== MENU CHON LEVEL =====
-// tạo nút cho từng level trong LEVELS
-function initLevelMenu() {
-    dom.levelList.innerHTML = '';
-    for (let i = 0; i < LEVELS.length; i++) {
-        const levelNumber = i + 1;
+function clickCell(x, y) {
+    if (gameState !== 'choosing-target') {
+        return;
+    }
 
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'level-option';
+    if (selectedSkill === 'row') {
+        removeRow(y);
+        breakRowCooldown = BREAK_ROW_COOLDOWN;
+    } else {
+        clearArea2x2(x, y);
+        explodeAreaCooldown = EXPLODE_AREA_COOLDOWN;
+    }
 
-        const title = document.createElement('span');
-        title.className = 'level-option-title';
-        title.textContent = LEVELS[i].name;
+    energy = 0;
+    movePieceUpUntilFree();
+    cancelSkill();
+}
 
-        const desc = document.createElement('span');
-        desc.className = 'level-option-desc';
-        desc.textContent = LEVELS[i].description;
+function hoverCell(x, y) {
+    hoveredX = x;
+    hoveredY = y;
+    draw();
+}
 
-        button.appendChild(title);
-        button.appendChild(desc);
-        button.addEventListener('click', function () {
-            if (!isLevelUnlocked(levelNumber)) {
-                return;
+function stopHover() {
+    hoveredX = -1;
+    hoveredY = -1;
+    draw();
+}
+
+function reduceCooldowns() {
+    if (breakRowCooldown > 0) {
+        breakRowCooldown = breakRowCooldown - 1;
+    }
+    if (explodeAreaCooldown > 0) {
+        explodeAreaCooldown = explodeAreaCooldown - 1;
+    }
+}
+
+
+// ===== VE =====
+
+function createCells() {
+    let boardElement = document.getElementById('board');
+    for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+            let cell = document.createElement('div');
+            cell.className = 'cell';
+            cell.onclick = function () {
+                clickCell(x, y);
+            };
+            cell.onmouseover = function () {
+                hoverCell(x, y);
+            };
+            boardElement.appendChild(cell);
+            boardCells.push(cell);
+        }
+    }
+    boardElement.onmouseleave = stopHover;
+
+    let nextElement = document.getElementById('next');
+    for (let i = 0; i < PREVIEW_SIZE * PREVIEW_SIZE; i++) {
+        let cell = document.createElement('div');
+        cell.className = 'cell';
+        nextElement.appendChild(cell);
+        nextCells.push(cell);
+    }
+}
+
+function getBoardCell(x, y) {
+    return boardCells[y * COLS + x];
+}
+
+function getNextCell(x, y) {
+    return nextCells[y * PREVIEW_SIZE + x];
+}
+
+function drawBoard() {
+    for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+            getBoardCell(x, y).dataset.v = board[y][x];
+            getBoardCell(x, y).className = 'cell';
+        }
+    }
+}
+
+function drawFallingPiece() {
+    if (gameState !== 'playing' && gameState !== 'choosing-target') {
+        return;
+    }
+
+    for (let y = 0; y < pieceShape.length; y++) {
+        for (let x = 0; x < pieceShape[y].length; x++) {
+            let boardY = pieceY + y;
+            if (pieceShape[y][x] !== EMPTY && boardY >= 0) {
+                getBoardCell(pieceX + x, boardY).dataset.v = pieceShape[y][x];
             }
-            startGame(levelNumber);
-            render();
-        });
-        dom.levelList.appendChild(button);
+        }
     }
 }
 
-// nút chơi lại
-dom.restartButton.addEventListener('click', function () {
-    startGame(game.startLevel);
-    render();
-});
+function drawSkillTarget() {
+    if (gameState !== 'choosing-target' || hoveredX === -1) {
+        return;
+    }
 
-// nút chọn màn
-dom.menuButton.addEventListener('click', function () {
-    openLevelMenu();
-    render();
-});
+    if (selectedSkill === 'row') {
+        for (let x = 0; x < COLS; x++) {
+            getBoardCell(x, hoveredY).className = 'cell target';
+        }
+    } else {
+        let left = getAreaLeft(hoveredX);
+        let top = getAreaTop(hoveredY);
+        getBoardCell(left, top).className = 'cell target';
+        getBoardCell(left + 1, top).className = 'cell target';
+        getBoardCell(left, top + 1).className = 'cell target';
+        getBoardCell(left + 1, top + 1).className = 'cell target';
+    }
+}
 
-// ===== CHAY GAME =====
-unlockedLevel = loadUnlockedLevel();
-initRenderer();
-initLevelMenu();
-render();
-requestAnimationFrame(update);
+function drawNextPiece() {
+    for (let y = 0; y < PREVIEW_SIZE; y++) {
+        for (let x = 0; x < PREVIEW_SIZE; x++) {
+            getNextCell(x, y).dataset.v = EMPTY;
+        }
+    }
+
+    if (nextPieceType === '') {
+        return;
+    }
+
+    let shape = SHAPES[nextPieceType];
+    let offset = 0;
+    if (shape.length === 2) {
+        offset = 1;
+    }
+
+    for (let y = 0; y < shape.length; y++) {
+        for (let x = 0; x < shape[y].length; x++) {
+            if (shape[y][x] !== EMPTY) {
+                getNextCell(x + offset, y + offset).dataset.v = shape[y][x];
+            }
+        }
+    }
+}
+
+function drawScoreAndLevel() {
+    document.getElementById('score').innerText = score;
+    document.getElementById('level').innerText = level;
+}
+
+function drawSkillButton(buttonId, name, cooldown, skill) {
+    let button = document.getElementById(buttonId);
+    button.disabled = canUseSkill(skill) === false;
+
+    if (cooldown > 0) {
+        button.innerText = name + ' (' + cooldown + 's)';
+    } else {
+        button.innerText = name;
+    }
+}
+
+function drawEnergyAndSkills() {
+    let isLevel4 = level === 4;
+    document.getElementById('energy-box').hidden = isLevel4 === false;
+    document.getElementById('skill-box').hidden = isLevel4 === false;
+
+    document.getElementById('energy-fill').style.width = energy + '%';
+    document.getElementById('energy-text').innerText = energy + ' / ' + MAX_ENERGY;
+
+    drawSkillButton('skill-row', 'Phá 1 hàng', breakRowCooldown, 'row');
+    drawSkillButton('skill-area', 'Nổ 2x2', explodeAreaCooldown, 'area');
+}
+
+function draw() {
+    drawBoard();
+    drawFallingPiece();
+    drawSkillTarget();
+    drawNextPiece();
+    drawScoreAndLevel();
+    drawEnergyAndSkills();
+}
+
+function showBanner(text) {
+    let banner = document.getElementById('level-banner');
+    banner.innerText = text;
+    banner.classList.add('is-visible');
+
+    setTimeout(function () {
+        banner.classList.remove('is-visible');
+    }, 2000);
+}
+
+
+// ===== MENU, BAT DAU, THUA =====
+
+function showMenu() {
+    gameState = 'menu';
+    document.getElementById('game-over').hidden = true;
+    document.getElementById('level-menu').hidden = false;
+
+    for (let levelNumber = 1; levelNumber <= LAST_LEVEL; levelNumber++) {
+        let button = document.getElementById('level-' + levelNumber + '-button');
+        let description = document.getElementById('level-' + levelNumber + '-desc');
+
+        if (levelNumber <= unlockedLevel) {
+            button.disabled = false;
+            description.innerText = getLevelDescription(levelNumber);
+        } else {
+            button.disabled = true;
+            description.innerText = 'Đã khóa: hãy đạt Level ' + levelNumber + ' khi chơi để mở';
+        }
+    }
+
+    document.getElementById('level-' + startLevel + '-button').focus();
+    draw();
+}
+
+function chooseLevel(levelNumber) {
+    if (levelNumber > unlockedLevel) {
+        return;
+    }
+    startLevel = levelNumber;
+    startGame();
+}
+
+function startGame() {
+    createEmptyBoard();
+    score = 0;
+    nextPieceType = '';
+    enterLevel(startLevel);
+    gameState = 'playing';
+    spawnNextPiece();
+
+    document.getElementById('level-menu').hidden = true;
+    document.getElementById('game-over').hidden = true;
+
+    if (level > 1) {
+        showBanner('Level ' + level);
+    }
+    draw();
+}
+
+function gameOver() {
+    gameState = 'over';
+    document.getElementById('final-score').innerText = score;
+    document.getElementById('game-over').hidden = false;
+    document.getElementById('restart-button').focus();
+}
+
+
+// ===== BAN PHIM VA THOI GIAN =====
+
+function handleKeyDown(event) {
+    if (gameState === 'choosing-target' && event.code === 'Escape') {
+        cancelSkill();
+        return;
+    }
+    if (gameState !== 'playing') {
+        return;
+    }
+
+    let isCtrlEnter = event.ctrlKey && (event.code === 'Enter' || event.code === 'NumpadEnter');
+
+    if (isCtrlEnter) {
+        skipToNextLevel();
+    } else if (event.code === 'KeyA') {
+        moveLeft();
+    } else if (event.code === 'KeyD') {
+        moveRight();
+    } else if (event.code === 'KeyS') {
+        moveDown();
+    } else if (event.code === 'Space') {
+        event.preventDefault();
+        rotatePiece();
+    }
+    draw();
+}
+
+function everySecond() {
+    if (gameState !== 'playing') {
+        return;
+    }
+    moveDown();
+    reduceCooldowns();
+    draw();
+}
+
+document.addEventListener('keydown', handleKeyDown);
+setInterval(everySecond, 1000);
+
+loadUnlockedLevel();
+createEmptyBoard();
+createCells();
+showMenu();
