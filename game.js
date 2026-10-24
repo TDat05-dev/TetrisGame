@@ -59,9 +59,8 @@ const SCORE_TO_REACH_LEVEL_2 = 100;
 const SCORE_TO_REACH_LEVEL_3 = 250;
 const SCORE_TO_REACH_LEVEL_4 = 500;
 const SCORE_TO_REACH_LEVEL_5 = 800;
-const LAST_LEVEL = 5;
-
-const SAVE_KEY = 'tetris.unlockedLevel';
+const SCORE_TO_REACH_LEVEL_6 = 1200;
+const LAST_LEVEL = 6;
 
 
 // ===== BIEN CHUNG =====
@@ -81,7 +80,7 @@ let level = 1;
 let startLevel = 1;
 let unlockedLevel = 1;
 
-// dùng cho level 2 và level 3
+// dùng cho level 2, level 3 và level 6
 let piecesWithoutClear = 0;
 
 let boardCells = [];
@@ -133,7 +132,12 @@ function removeFullRows() {
     let y = ROWS - 1;
 
     while (y >= 0) {
-        if (isRowFull(y)) {
+        if (isRowFull(y) && rowHasLockedCell(y)) {
+            // level 6
+            crackLockedRow(y);
+            removedCount = removedCount + 1;
+            y = y - 1;
+        } else if (isRowFull(y)) {
             removeRow(y);
             removedCount = removedCount + 1;
         } else {
@@ -222,6 +226,13 @@ function spawnNextPiece() {
     pieceShape = copyShape(pieceType);
     pieceX = Math.floor(COLS / 2) - Math.floor(pieceShape.length / 2);
     pieceY = 0;
+
+    // level 6
+    if (nextPieceIsLocked) {
+        lockShape(pieceShape);
+    }
+    nextPieceIsLocked = lockNextPiece;
+    lockNextPiece = false;
 
     // level 3
     if (bombIsNext) {
@@ -333,6 +344,9 @@ function landPiece() {
     if (level === 3) {
         applyLevel3Rule(linesRemoved);
     }
+    if (level === 6) {
+        applyLevel6Rule(linesRemoved);
+    }
 
     spawnNextPiece();
 }
@@ -362,7 +376,12 @@ function getScoreToReachLevel(levelNumber) {
     if (levelNumber === 4) {
         return SCORE_TO_REACH_LEVEL_4;
     }
-    return SCORE_TO_REACH_LEVEL_5;
+    if (levelNumber === 5) {
+        return SCORE_TO_REACH_LEVEL_5;
+    }
+    if (levelNumber === 6) {
+        return SCORE_TO_REACH_LEVEL_6;
+    }
 }
 
 function getLevelDescription(levelNumber) {
@@ -378,7 +397,12 @@ function getLevelDescription(levelNumber) {
     if (levelNumber === 4) {
         return 'Phá hàng để tích năng lượng, đầy thì dùng kỹ năng';
     }
-    return 'Đi qua mép trái sẽ hiện ra ở mép phải và ngược lại';
+    if (levelNumber === 5) {
+        return 'Đi qua mép trái sẽ hiện ra ở mép phải và ngược lại';
+    }
+    if (levelNumber ===6){
+        return 'Cứ ' + PIECES_BEFORE_LOCK + ' khối không phá hàng thì khối kế tiếp bị khóa, phải phá 2 lần';
+    }
 }
 
 function levelUpIfEnoughScore() {
@@ -400,6 +424,8 @@ function enterLevel(newLevel) {
     energy = 0;
     breakRowCooldown = 0;
     explodeAreaCooldown = 0;
+    lockNextPiece = false;
+    nextPieceIsLocked = false;
     unlockLevel(newLevel);
 }
 
@@ -429,22 +455,11 @@ function countPieceWithoutClear(linesRemoved) {
 }
 
 
-// ===== LUU LEVEL DA MO =====
-
-function loadUnlockedLevel() {
-    let savedLevel = parseInt(localStorage.getItem(SAVE_KEY));
-
-    if (savedLevel >= 1 && savedLevel <= LAST_LEVEL) {
-        unlockedLevel = savedLevel;
-    } else {
-        unlockedLevel = 1;
-    }
-}
+// ===== MO KHOA LEVEL =====
 
 function unlockLevel(newLevel) {
     if (newLevel > unlockedLevel) {
         unlockedLevel = newLevel;
-        localStorage.setItem(SAVE_KEY, unlockedLevel);
     }
 }
 
@@ -530,7 +545,12 @@ function drawNextPiece() {
 
     for (let y = 0; y < shape.length; y++) {
         for (let x = 0; x < shape[y].length; x++) {
-            if (shape[y][x] !== EMPTY) {
+            if (shape[y][x] === EMPTY) {
+                continue;
+            }
+            if (nextPieceIsLocked) {
+                getNextCell(x + offset, y + offset).dataset.v = LOCKED;
+            } else {
                 getNextCell(x + offset, y + offset).dataset.v = shape[y][x];
             }
         }
@@ -618,9 +638,16 @@ function chooseLevel(levelNumber) {
     startGame();
 }
 
+function getStartScore(levelNumber) {
+    if (levelNumber === 1) {
+        return 0;
+    }
+    return getScoreToReachLevel(levelNumber);
+}
+
 function startGame() {
     createEmptyBoard();
-    score = 0;
+    score = getStartScore(startLevel);
     nextPieceType = '';
     enterLevel(startLevel);
     gameState = 'playing';
@@ -712,7 +739,7 @@ function addGarbageRow() {
 // ===== LEVEL 3: KHOI BOM =====
 
 const BOMB = 'BOMB';
-const PIECES_BEFORE_BOMB = 6;
+const PIECES_BEFORE_BOMB = 5;
 
 let bombIsNext = false;
 
@@ -950,6 +977,54 @@ function tryTeleportPiece(direction) {
 }
 
 
+// ===== LEVEL 6: KHOI BI KHOA =====
+
+const LOCKED = 10;
+const CRACKED = 11;
+const PIECES_BEFORE_LOCK = 5;
+
+let lockNextPiece = false;
+let nextPieceIsLocked = false;
+
+function applyLevel6Rule(linesRemoved) {
+    countPieceWithoutClear(linesRemoved);
+
+    if (piecesWithoutClear === PIECES_BEFORE_LOCK) {
+        piecesWithoutClear = 0;
+        lockNextPiece = true;
+    }
+}
+
+function lockShape(shape) {
+    for (let y = 0; y < shape.length; y++) {
+        for (let x = 0; x < shape[y].length; x++) {
+            if (shape[y][x] !== EMPTY) {
+                shape[y][x] = LOCKED;
+            }
+        }
+    }
+}
+
+function rowHasLockedCell(y) {
+    for (let x = 0; x < COLS; x++) {
+        if (board[y][x] === LOCKED) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function crackLockedRow(y) {
+    for (let x = 0; x < COLS; x++) {
+        if (board[y][x] === LOCKED) {
+            board[y][x] = CRACKED;
+        } else {
+            board[y][x] = EMPTY;
+        }
+    }
+}
+
+
 // ===== BAN PHIM VA THOI GIAN =====
 
 function handleKeyDown(event) {
@@ -1004,7 +1079,6 @@ function everySecond() {
 document.addEventListener('keydown', handleKeyDown);
 setInterval(everySecond, 1000);
 
-loadUnlockedLevel();
 createEmptyBoard();
 createCells();
 showMenu();
